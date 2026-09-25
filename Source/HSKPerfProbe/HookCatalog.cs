@@ -247,16 +247,25 @@ namespace HSKPerfProbe
         public static int EmptySkipped;
 
         /// <summary>True when the IL is a single 'ret': hooking it would only measure the probe itself.</summary>
-        static bool IsEmptyBody(MethodBase m)
+        internal static bool IsEmptyBody(MethodBase m)
+        {
+            int size = ILSize(m);
+            if (size != 1) return false;
+            try { return m.GetMethodBody().GetILAsByteArray()[0] == 0x2A; }
+            catch { return false; }
+        }
+
+        /// <summary>Size of the method's IL in bytes, or -1 when it cannot be read.</summary>
+        internal static int ILSize(MethodBase m)
         {
             try
             {
                 var body = m.GetMethodBody();
-                if (body == null) return false;
+                if (body == null) return -1;
                 var il = body.GetILAsByteArray();
-                return il != null && il.Length == 1 && il[0] == 0x2A;
+                return il == null ? -1 : il.Length;
             }
-            catch { return false; }
+            catch { return -1; }
         }
 
         static bool Acceptable(MethodInfo m)

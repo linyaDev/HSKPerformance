@@ -335,6 +335,10 @@ namespace HSKPerfProbe
             sb.AppendLine("## World pawns and fixes");
             sb.AppendLine();
             sb.AppendLine("- " + (worldPawns != null ? worldPawns + ". Details: world_pawns.md / world_pawns.csv in this folder." : "world pawn list not available"));
+            string worldObjects = WorldObjectDump.TryWrite(dir);
+            sb.AppendLine("- " + (worldObjects != null ? worldObjects + ". Details: world_objects.md / world_objects.csv in this folder." : "world object list not available"));
+            string tickingThings = TickingThingsDump.TryWrite(dir);
+            sb.AppendLine("- " + (tickingThings != null ? tickingThings + ". Details: ticking_things.md / ticking_things.csv in this folder." : "ticking things list not available"));
             if (PerfFixes.Status.Count == 0) sb.AppendLine("- fixes: none active");
             foreach (var st in PerfFixes.Status) sb.AppendLine("- " + Clean(st));
             string liveFix = PerfFixes.LiveStatus();

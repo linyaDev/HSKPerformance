@@ -75,7 +75,7 @@ namespace HSKPerfProbe
             var go = new GameObject("HSKPerfProbe");
             UnityEngine.Object.DontDestroyOnLoad(go);
             go.AddComponent<ProbeDriver>();
-            Log.Message("[HSKPerfProbe] ready. Ctrl+F9 = start/stop a capture, Ctrl+F10 = list world pawns that are ticked every tick. Reports go to " + ProbeConfig.Dir);
+            Log.Message("[HSKPerfProbe] ready. Ctrl+F9 = start/stop a capture, Ctrl+F10 = list what is ticked (world pawns, world objects, things on the maps). Reports go to " + ProbeConfig.Dir);
             PerfFixes.Init();
         }
     }

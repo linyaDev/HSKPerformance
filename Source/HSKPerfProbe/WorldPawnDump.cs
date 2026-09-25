@@ -47,9 +47,16 @@ namespace HSKPerfProbe
         /// <summary>Writes into its own timestamped folder. Returns a one-line summary, or null if there is no game.</summary>
         public static string WriteStandalone()
         {
-            string dir = Path.Combine(ProbeConfig.Dir, "world-pawns-" + DateTime.Now.ToString("yyyyMMdd-HHmmss", Inv));
-            string summary = TryWrite(dir);
-            return summary == null ? null : summary + "  ->  " + dir;
+            string dir = Path.Combine(ProbeConfig.Dir, "world-dump-" + DateTime.Now.ToString("yyyyMMdd-HHmmss", Inv));
+            string pawns = TryWrite(dir);
+            string objects = WorldObjectDump.TryWrite(dir);
+            string things = TickingThingsDump.TryWrite(dir);
+            if (pawns == null && objects == null && things == null) return null;
+            var parts = new List<string>();
+            if (pawns != null) parts.Add(pawns);
+            if (objects != null) parts.Add(objects);
+            if (things != null) parts.Add(things);
+            return string.Join("  |  ", parts.ToArray()) + "  ->  " + dir;
         }
 
         public static string TryWrite(string dir)
