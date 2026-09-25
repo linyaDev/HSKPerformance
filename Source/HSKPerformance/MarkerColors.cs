@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Reflection;
+using System.Reflection.Emit;
 using HarmonyLib;
 using RimWorld;
 using UnityEngine;
@@ -13,7 +15,7 @@ namespace HSKPerformance
     /// for animals and foreign pawns the outline is PawnNameColorUtility.PawnNameColorOf (light blue for factionless pawns, i.e. wild animals), and
     /// colonists get white with a black outline. We post-process that result, only when the player has no rule for the pawn (dotConfig == null):
     ///   - colonists get a bright green marker with a darker green outline (not while selected, downed or in a mental state, those keep Camera+'s own colours),
-    ///   - drones (race defName starts with "Drone") get a pale grey-blue fill instead of white,
+    ///   - drones and robots (race defName starts with one of marker_drone_prefixes: Drone, AIRobot_) get a pale grey-blue fill instead of white,
     ///   - guests (host faction is the player, or quest lodgers) light blue, prisoners of the colony orange, slaves of the colony yellow,
     ///   - predators that are not ours (RaceProps.predator, wild or hostile faction) get a red marker with a darker red outline, even when a Camera+ rule matches them.
     ///
@@ -32,7 +34,9 @@ namespace HSKPerformance
         static Color guest = new Color(0x8F / 255f, 0xD4 / 255f, 0xF5 / 255f, 1f);     // light blue
         static Color prisoner = new Color(0xFF / 255f, 0x95 / 255f, 0x00 / 255f, 1f);  // orange
         static Color slave = new Color(0xF0 / 255f, 0xD0 / 255f, 0x20 / 255f, 1f);     // yellow
-        static Color drone = new Color(0x74 / 255f, 0x7E / 255f, 0x88 / 255f, 1f);     // pale grey-blue: drones are white otherwise and dominate the map
+        static Color drone = new Color(0x74 / 255f, 0x7E / 255f, 0x88 / 255f, 1f);     // pale grey-blue: drones and robots are white otherwise and dominate the map
+        static string[] dronePrefixes = { "Drone", "AIRobot_" };                          // race defNames: Odyssey drones, Misc. Robots
+        static readonly Dictionary<ThingDef, bool> droneByDef = new Dictionary<ThingDef, bool>();
         static long recolored, labelsDrawn, calls, predatorsSeen, predatorsByRule, colonistsSeen, colonistsByRule;
         static MethodInfo shouldShowMarker;
 
@@ -40,6 +44,7 @@ namespace HSKPerformance
         {
             Enabled = cfg.FixMarkerColors;
             SetColors(cfg.MarkerColonist, cfg.MarkerPredator, cfg.MarkerGuest, cfg.MarkerPrisoner, cfg.MarkerSlave, cfg.MarkerDrone);
+            SetDronePrefixes(cfg.MarkerDronePrefixes);
             var type = AccessTools.TypeByName("CameraPlus.DotTools");
             MethodInfo target = null;
             if (type != null)
@@ -62,6 +67,7 @@ namespace HSKPerformance
                 harmony.Patch(target, postfix: new HarmonyMethod(typeof(MarkerColors).GetMethod("Postfix", BindingFlags.Static | BindingFlags.NonPublic)));
                 Installed = true;
                 InstallNameLabel(harmony, type);
+                InstallForcedMarkers(harmony);
                 PerfFixes.Status.Add("marker colors: " + (Enabled ? "ON" : "installed but OFF") + " (Camera+ markers: colonists fully green unless you have a Camera+ rule for them, predators that are not ours fully red)");
             }
             catch (Exception e)
@@ -93,10 +99,89 @@ namespace HSKPerformance
             if (TryHex(droneHex, out c)) drone = c;
         }
 
+        /// <summary>Comma separated race defName prefixes whose markers get the pale drone fill (for example "Drone,AIRobot_").</summary>
+        public static void SetDronePrefixes(string csv)
+        {
+            if (string.IsNullOrEmpty(csv)) return;
+            var list = new List<string>();
+            foreach (var p in csv.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries)) { var t = p.Trim(); if (t.Length > 0) list.Add(t); }
+            dronePrefixes = list.ToArray();
+            droneByDef.Clear();
+        }
+
+        static bool IsDrone(ThingDef def)
+        {
+            if (def == null || def.defName == null) return false;
+            bool r;
+            if (droneByDef.TryGetValue(def, out r)) return r;
+            r = false;
+            foreach (var p in dronePrefixes)
+                if (def.defName.StartsWith(p, StringComparison.Ordinal)) { r = true; break; }
+            droneByDef[def] = r;
+            return r;
+        }
+
         static void Paint(ref Color inner, ref Color outer, Color c)
         {
             inner = c;
             outer = new Color(c.r * 0.35f, c.g * 0.35f, c.b * 0.35f, 1f);   // a darker outline of the same colour keeps the shape readable
+        }
+
+        // ---- markers are ours while the far map is active
+        // Camera+ turns a pawn into a marker when the size of a map cell on screen is at most its threshold (settings.dotSize or the rule's showBelowPixels).
+        // MarkerDecision.For reads that size once from FastUI.CurUICellSize. While the far map is active we make that read return 0, so every pawn that
+        // Camera+ may draw as a marker (style, animal policy and rules still apply) is one, whatever the threshold says.
+        static Func<float> realCellSize;
+        static MethodInfo cellSizeGetter;
+        static int replacedCalls;
+
+        static void InstallForcedMarkers(Harmony harmony)
+        {
+            try
+            {
+                var decisionType = AccessTools.TypeByName("CameraPlus.MarkerDecision");
+                var fastUi = AccessTools.TypeByName("CameraPlus.FastUI");
+                cellSizeGetter = fastUi == null ? null : AccessTools.PropertyGetter(fastUi, "CurUICellSize");
+                MethodInfo forMethod = null;
+                if (decisionType != null)
+                    foreach (var m in decisionType.GetMethods(BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic))
+                        if (m.Name == "For" && m.GetParameters().Length == 3) { forMethod = m; break; }
+                if (forMethod == null || cellSizeGetter == null || cellSizeGetter.ReturnType != typeof(float))
+                {
+                    PerfFixes.Status.Add("far map: Camera+ markers are NOT forced (MarkerDecision.For or FastUI.CurUICellSize not found)");
+                    return;
+                }
+                realCellSize = (Func<float>)Delegate.CreateDelegate(typeof(Func<float>), cellSizeGetter);
+                replacedCalls = 0;
+                harmony.Patch(forMethod, transpiler: new HarmonyMethod(typeof(MarkerColors).GetMethod("ForTranspiler", BindingFlags.Static | BindingFlags.NonPublic)));
+                PerfFixes.Status.Add(replacedCalls > 0
+                    ? "far map: while it is active every pawn is drawn as a Camera+ marker (contour), whatever Camera+'s size threshold says"
+                    : "far map: Camera+ markers are NOT forced (the cell size read was not found in MarkerDecision.For)");
+            }
+            catch (Exception e)
+            {
+                PerfFixes.Status.Add("far map: Camera+ markers not forced (" + e.GetType().Name + ")");
+            }
+        }
+
+        static IEnumerable<CodeInstruction> ForTranspiler(IEnumerable<CodeInstruction> instructions)
+        {
+            var replacement = typeof(MarkerColors).GetMethod("CellSizeForMarkers", BindingFlags.Static | BindingFlags.NonPublic);
+            foreach (var ins in instructions)
+            {
+                if ((ins.opcode == OpCodes.Call || ins.opcode == OpCodes.Callvirt) && ins.operand as MethodInfo == cellSizeGetter)
+                {
+                    replacedCalls++;
+                    yield return new CodeInstruction(OpCodes.Call, replacement) { labels = ins.labels, blocks = ins.blocks };
+                }
+                else yield return ins;
+            }
+        }
+
+        static float CellSizeForMarkers()
+        {
+            try { if (FarMap.Active()) return 0f; } catch { }
+            return realCellSize();
         }
 
         static void InstallNameLabel(Harmony harmony, Type dotTools)
@@ -158,8 +243,8 @@ namespace HSKPerformance
             {
                 var selector = Find.Selector;
                 if (selector != null && selector.IsSelected(pawn)) return;            // the selected pawn keeps Camera+'s highlight
-                // drones (Odyssey: Drone_Hunter, Drone_Wasp, Drone_Sentry, ...): only the fill is toned down, the outline (faction colour) stays
-                if (pawn.def != null && pawn.def.defName != null && pawn.def.defName.StartsWith("Drone", StringComparison.Ordinal))
+                // drones and robots (Odyssey Drone_*, Misc. Robots AIRobot_*): only the fill is toned down, the outline (faction colour) stays
+                if (IsDrone(pawn.def))
                 {
                     innerColor = drone; recolored++; return;
                 }

@@ -38,6 +38,8 @@ namespace HSKPerformance
         static Color32 WaterColor = new Color32(0x26, 0x39, 0x4A, 255);   // very pale: only slightly lighter than the background
         static Color32 MarshColor = new Color32(0x2B, 0x3A, 0x2A, 255);
         static Color32 DoorColor = new Color32(0x43, 0x4B, 0x53, 255);    // between the background and the walls: faint
+        static Color32 BuildingColor = new Color32(0x2D, 0x34, 0x3A, 255);  // buildings that cannot be walked through (big machines, blocks): very pale
+        static Color32 StorageColor = new Color32(0x3A, 0x33, 0x48, 255);   // impassable storage buildings: another pale colour
         static readonly Color32 Clear = new Color32(0, 0, 0, 0);
         static Color BackgroundColor = new Color(0x12 / 255f, 0x16 / 255f, 0x14 / 255f, 1f);
         static bool colorsChanged;
@@ -55,7 +57,12 @@ namespace HSKPerformance
         }
 
         /// <summary>Sets the colours from three RRGGBB strings; a string that is not valid keeps the current colour. The texture is redrawn on the next far map frame.</summary>
-        public static void SetColors(string wall, string rock, string background, string water, string marsh, string door)
+        public static void SetColors(ProbeConfig cfg)
+        {
+            SetColors(cfg.FarMapWall, cfg.FarMapRock, cfg.FarMapBackground, cfg.FarMapWater, cfg.FarMapMarsh, cfg.FarMapDoor, cfg.FarMapBuilding, cfg.FarMapStorage);
+        }
+
+        static void SetColors(string wall, string rock, string background, string water, string marsh, string door, string building, string storage)
         {
             Color32 c;
             bool changed = false;
@@ -64,6 +71,8 @@ namespace HSKPerformance
             if (TryParseHex(water, out c) && !c.Equals(WaterColor)) { WaterColor = c; changed = true; }
             if (TryParseHex(marsh, out c) && !c.Equals(MarshColor)) { MarshColor = c; changed = true; }
             if (TryParseHex(door, out c) && !c.Equals(DoorColor)) { DoorColor = c; changed = true; }
+            if (TryParseHex(building, out c) && !c.Equals(BuildingColor)) { BuildingColor = c; changed = true; }
+            if (TryParseHex(storage, out c) && !c.Equals(StorageColor)) { StorageColor = c; changed = true; }
             if (TryParseHex(background, out c))
             {
                 var bg = new Color(c.r / 255f, c.g / 255f, c.b / 255f, 1f);
@@ -96,7 +105,7 @@ namespace HSKPerformance
         {
             Enabled = cfg.FixFarMap;
             ThresholdPx = cfg.FarMapPx;
-            SetColors(cfg.FarMapWall, cfg.FarMapRock, cfg.FarMapBackground, cfg.FarMapWater, cfg.FarMapMarsh, cfg.FarMapDoor);
+            SetColors(cfg);
             var missing = new List<string>();
             int patched = 0;
 
@@ -165,7 +174,7 @@ namespace HSKPerformance
         public static string Live()
         {
             return "far map live: " + (failed ? "SWITCHED OFF after an error" : (activeNow ? "ACTIVE" : "off")) + ", cell " + lastPx.ToString("F1", CultureInfo.InvariantCulture)
-                + " px (threshold " + ThresholdPx.ToString("F1", CultureInfo.InvariantCulture) + "), " + activeFrames + " frames drawn, " + rebuilds + " texture rebuilds, " + dirtyApplied + " cells updated";
+                + " px (threshold " + ThresholdPx.ToString("F1", CultureInfo.InvariantCulture) + "), " + activeFrames + " frames drawn, " + rebuilds + " texture rebuilds, " + dirtyApplied + " cells updated, " + selectedDrawn + " selected things drawn";
         }
 
         public static string ContextLine()
@@ -278,9 +287,47 @@ namespace HSKPerformance
             var wall = centre; wall.y = AltitudeLayer.Building.AltitudeFor();
             Graphics.DrawMesh(MeshPool.plane10, Matrix4x4.TRS(bg, Quaternion.identity, scale), backgroundMaterial, 0);
             Graphics.DrawMesh(MeshPool.plane10, Matrix4x4.TRS(wall, Quaternion.identity, scale), wallMaterial, 0);
+            DrawSelectedThings(map);
         }
 
-        /// <summary>One cell: doors, rock and walls first, then marsh and water (very pale), otherwise transparent so the background shows.</summary>
+        static long selectedDrawn;
+        static bool selectedErrorLogged;
+
+        /// <summary>
+        /// A building or item the player has selected is drawn as it really looks. Most things are printed into the map mesh (which is not drawn now),
+        /// so the graphic is drawn directly: MapMeshOnly things with Graphic.Draw, real-time things with their own DrawAt (doors, animated benches),
+        /// and things that are both get the two. Pawns are not handled here (the game draws them).
+        /// </summary>
+        static void DrawSelectedThings(Map map)
+        {
+            var selector = Find.Selector;
+            if (selector == null) return;
+            var list = selector.SelectedObjectsListForReading;
+            for (int i = 0; i < list.Count; i++)
+            {
+                var t = list[i] as Thing;
+                if (t == null || t is Pawn || !t.Spawned || t.Map != map || t.def == null) continue;
+                try
+                {
+                    var drawer = t.def.drawerType;
+                    if (drawer == DrawerType.None) continue;
+                    var pos = t.DrawPos;
+                    if (drawer != DrawerType.RealtimeOnly) t.Graphic.Draw(pos, t.Rotation, t);   // the printed body
+                    if (drawer != DrawerType.MapMeshOnly) t.DrawNowAt(pos);                        // real-time part: doors, animation, comps
+                    selectedDrawn++;
+                }
+                catch (Exception e)
+                {
+                    if (!selectedErrorLogged)
+                    {
+                        selectedErrorLogged = true;
+                        try { Verse.Log.Warning("[HSK Performance] far map: could not draw the selected " + t + ": " + e.GetType().Name + " " + e.Message); } catch { }
+                    }
+                }
+            }
+        }
+
+        /// <summary>One cell: door, rock, wall, an impassable storage building or other impassable building, then marsh and water (very pale), otherwise transparent so the background shows.</summary>
         static Color32 PixelFor(Map map, int index)
         {
             var b = map.edificeGrid[index];
@@ -291,6 +338,11 @@ namespace HSKPerformance
                 if (def.building != null && def.building.isNaturalRock) return RockColor;
                 var g = def.graphicData;
                 if (g != null && (g.linkFlags & LinkFlags.Wall) != 0) return WallColor;
+                if (def.passability == Traversability.Impassable)
+                {
+                    // only what cannot be walked through: storage buildings (Adaptive Storage derives from Building_Storage) and other buildings in their own pale colours
+                    return b is Building_Storage ? StorageColor : BuildingColor;
+                }
             }
             var t = map.terrainGrid.TerrainAt(index);
             if (t != null)

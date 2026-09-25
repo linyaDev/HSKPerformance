@@ -42,7 +42,8 @@ namespace HSKPerformance
             FarMap.ThresholdPx = cfg.FarMapPx;
             MarkerColors.Enabled = cfg.FixMarkerColors;
             MarkerColors.SetColors(cfg.MarkerColonist, cfg.MarkerPredator, cfg.MarkerGuest, cfg.MarkerPrisoner, cfg.MarkerSlave, cfg.MarkerDrone);
-            FarMap.SetColors(cfg.FarMapWall, cfg.FarMapRock, cfg.FarMapBackground, cfg.FarMapWater, cfg.FarMapMarsh, cfg.FarMapDoor);
+            MarkerColors.SetDronePrefixes(cfg.MarkerDronePrefixes);
+            FarMap.SetColors(cfg);
             MothballHediffFix.SetEnabled(cfg.FixMothballHediffs, cfg);
             string line = "fixes switched from settings: rot storage " + (cfg.FixRotStorage ? "ON" : "off") + ", pawn effects/wreck smoke " + (cfg.FixPawnEffects ? "ON" : "off") + ", far map " + (cfg.FixFarMap ? "ON" : "off") + ", marker colors " + (cfg.FixMarkerColors ? "ON" : "off")
                 + " (from speed " + cfg.PawnEffectsMinSpeed.ToString(CultureInfo.InvariantCulture) + "), mothball hediffs " + (cfg.FixMothballHediffs ? "ON" : "off");
