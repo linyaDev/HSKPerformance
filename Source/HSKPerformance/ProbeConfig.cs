@@ -32,7 +32,11 @@ namespace HSKPerformance
         public bool FixFarMap = true;
         public float FarMapPx = 17f;
         public string FarMapWall = "6E7680", FarMapRock = "3A302A", FarMapBackground = "121614";   // RRGGBB
-        public string FarMapWater = "26394A", FarMapMarsh = "2B3A2A";
+        public string FarMapWater = "26394A", FarMapMarsh = "2B3A2A", FarMapDoor = "434B53";
+        // Camera+ marker outlines: colonists green, wild predators red (only where the player has no Camera+ rule for the pawn).
+        public bool FixMarkerColors = true;
+        public string MarkerColonist = "33E055", MarkerPredator = "E63030";   // RRGGBB
+        public string MarkerGuest = "8FD4F5", MarkerPrisoner = "FF9500", MarkerSlave = "F0D020", MarkerDrone = "747E88";
         public bool FixPawnEffects = true;
         public float PawnEffectsMinSpeed = 3f;
         public bool FixMothballHediffs = true; // let world pawns with these chronic hediffs be mothballed (see PerfFixes)
@@ -81,6 +85,14 @@ namespace HSKPerformance
                     "far_map_background=" + FarMapBackground + "\n" +
                     "far_map_water=" + FarMapWater + "\n" +
                     "far_map_marsh=" + FarMapMarsh + "\n" +
+                    "far_map_door=" + FarMapDoor + "\n" +
+                    "fix_marker_colors=" + B(FixMarkerColors) + "\n" +
+                    "marker_colonist=" + MarkerColonist + "\n" +
+                    "marker_predator=" + MarkerPredator + "\n" +
+                    "marker_guest=" + MarkerGuest + "\n" +
+                    "marker_prisoner=" + MarkerPrisoner + "\n" +
+                    "marker_slave=" + MarkerSlave + "\n" +
+                    "marker_drone=" + MarkerDrone + "\n" +
                     "fix_pawn_effects=" + B(FixPawnEffects) + "\n" +
                     "pawn_effects_min_speed=" + PawnEffectsMinSpeed.ToString(CultureInfo.InvariantCulture) + "\n" +
                     "fix_mothball_hediffs=" + B(FixMothballHediffs) + "\n" +
@@ -125,6 +137,14 @@ namespace HSKPerformance
                         "far_map_background=121614\n" +
                         "far_map_water=26394A\n" +
                         "far_map_marsh=2B3A2A\n" +
+                        "far_map_door=434B53\n" +
+                        "fix_marker_colors=true\n" +
+                        "marker_colonist=33E055\n" +
+                        "marker_predator=E63030\n" +
+                        "marker_guest=8FD4F5\n" +
+                        "marker_prisoner=FF9500\n" +
+                        "marker_slave=F0D020\n" +
+                        "marker_drone=747E88\n" +
                         "fix_pawn_effects=true\n" +
                         "pawn_effects_min_speed=3\n" +
                         "fix_mothball_hediffs=true\n" +
@@ -165,6 +185,14 @@ namespace HSKPerformance
                         case "far_map_background": c.FarMapBackground = v; break;
                         case "far_map_water": c.FarMapWater = v; break;
                         case "far_map_marsh": c.FarMapMarsh = v; break;
+                        case "far_map_door": c.FarMapDoor = v; break;
+                        case "fix_marker_colors": if (bool.TryParse(v, out b)) c.FixMarkerColors = b; break;
+                        case "marker_colonist": c.MarkerColonist = v; break;
+                        case "marker_predator": c.MarkerPredator = v; break;
+                        case "marker_guest": c.MarkerGuest = v; break;
+                        case "marker_prisoner": c.MarkerPrisoner = v; break;
+                        case "marker_slave": c.MarkerSlave = v; break;
+                        case "marker_drone": c.MarkerDrone = v; break;
                         case "fix_pawn_effects": if (bool.TryParse(v, out b)) c.FixPawnEffects = b; break;
                         case "pawn_effects_min_speed": { float f; if (float.TryParse(v, NumberStyles.Float, CultureInfo.InvariantCulture, out f) && f >= 0f) c.PawnEffectsMinSpeed = f; break; }
                         case "fix_mothball_hediffs": if (bool.TryParse(v, out b)) c.FixMothballHediffs = b; break;

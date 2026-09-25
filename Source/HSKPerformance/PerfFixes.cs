@@ -28,6 +28,7 @@ namespace HSKPerformance
             string s = RotStorageFix.Installed ? RotStorageFix.Live() : "";
             if (PawnEffectsFix.Installed) s = (s.Length > 0 ? s + "   |   " : "") + PawnEffectsFix.Live();
             if (FarMap.Installed) s = (s.Length > 0 ? s + "   |   " : "") + FarMap.Live();
+            if (MarkerColors.Installed) s = (s.Length > 0 ? s + "   |   " : "") + MarkerColors.Live();
             return s;
         }
 
@@ -39,9 +40,11 @@ namespace HSKPerformance
             PawnEffectsFix.MinSpeed = cfg.PawnEffectsMinSpeed;
             FarMap.Enabled = cfg.FixFarMap && FarMap.Installed;
             FarMap.ThresholdPx = cfg.FarMapPx;
-            FarMap.SetColors(cfg.FarMapWall, cfg.FarMapRock, cfg.FarMapBackground, cfg.FarMapWater, cfg.FarMapMarsh);
+            MarkerColors.Enabled = cfg.FixMarkerColors;
+            MarkerColors.SetColors(cfg.MarkerColonist, cfg.MarkerPredator, cfg.MarkerGuest, cfg.MarkerPrisoner, cfg.MarkerSlave, cfg.MarkerDrone);
+            FarMap.SetColors(cfg.FarMapWall, cfg.FarMapRock, cfg.FarMapBackground, cfg.FarMapWater, cfg.FarMapMarsh, cfg.FarMapDoor);
             MothballHediffFix.SetEnabled(cfg.FixMothballHediffs, cfg);
-            string line = "fixes switched from settings: rot storage " + (cfg.FixRotStorage ? "ON" : "off") + ", pawn effects/wreck smoke " + (cfg.FixPawnEffects ? "ON" : "off") + ", far map " + (cfg.FixFarMap ? "ON" : "off")
+            string line = "fixes switched from settings: rot storage " + (cfg.FixRotStorage ? "ON" : "off") + ", pawn effects/wreck smoke " + (cfg.FixPawnEffects ? "ON" : "off") + ", far map " + (cfg.FixFarMap ? "ON" : "off") + ", marker colors " + (cfg.FixMarkerColors ? "ON" : "off")
                 + " (from speed " + cfg.PawnEffectsMinSpeed.ToString(CultureInfo.InvariantCulture) + "), mothball hediffs " + (cfg.FixMothballHediffs ? "ON" : "off");
             Status.Add(line);
             try { Verse.Log.Message("[HSK Performance] " + line); } catch { }
@@ -58,6 +61,7 @@ namespace HSKPerformance
                 RotStorageFix.Apply(harmony, cfg);
                 PawnEffectsFix.Apply(harmony, cfg);
                 FarMap.Apply(harmony, cfg);
+                MarkerColors.Apply(harmony, cfg);
                 if (cfg.FixMothballHediffs) MothballHediffFix.Apply(cfg);
                 else Status.Add("mothball hediff fix: off (settings / config.txt)");
             }
@@ -83,8 +87,7 @@ namespace HSKPerformance
         public static bool Enabled = true;
         public static float MinSpeed = 3f;
         static int decidedFrame = -1;
-        static bool activeNow, announcedState, everOn;
-        static float lastAnnounce = -100f;
+        static bool activeNow;
         static long skipped;
 
         public static void Apply(Harmony harmony, ProbeConfig cfg)
@@ -128,25 +131,7 @@ namespace HSKPerformance
             try { var tm = Find.TickManager; on = Enabled && tm != null && tm.TickRateMultiplier >= MinSpeed; }
             catch { on = false; }
             activeNow = on;
-            Announce(on);
             return on;
-        }
-
-        // Tells the player when the mode flips (at most once every few seconds, and not at all before it was on once).
-        static void Announce(bool on)
-        {
-            if (on == announcedState) return;
-            if (!on && !everOn) return;
-            float real = UnityEngine.Time.realtimeSinceStartup;
-            if (real - lastAnnounce < 3f) return;
-            announcedState = on; lastAnnounce = real;
-            if (on) everOn = true;
-            string speed = "";
-            try { speed = " (скорость " + Find.TickManager.CurTimeSpeed + ")"; } catch { }
-            string text = on ? "HSK Performance: следы пешек, пар от дыхания, рябь на воде и дым разбитых капсул и кораблей ОТКЛЮЧЕНЫ" + speed
-                             : "HSK Performance: следы пешек, пар от дыхания, рябь на воде и дым разбитых капсул и кораблей снова ВКЛЮЧЕНЫ" + speed;
-            Verse.Log.Message("[HSK Performance] pawn effects " + (on ? "OFF" : "ON") + speed);
-            try { Messages.Message(text, MessageTypeDefOf.SilentInput, false); } catch { }
         }
 
         // Harmony prefix: false = skip the original method

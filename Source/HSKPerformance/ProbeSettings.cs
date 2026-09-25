@@ -4,13 +4,15 @@ using Verse;
 
 namespace HSKPerformance
 {
-    /// <summary>Options > Mod settings > HSKPerformance. Values are stored in the same config.txt the recorder reads on every start.</summary>
+    /// <summary>
+    /// Options > Mod settings > HSK Performance: four switches for the fixes and one slider for the far map.
+    /// Everything else (recording length, hook groups, colours, speed thresholds) lives in config.txt, which the recorder and the fixes read.
+    /// </summary>
     public sealed class HSKPerformanceMod : Mod
     {
         ProbeConfig cfg;
         Vector2 scroll;
-        string durationBuf, warmupBuf;
-        bool sRot, sMap, sEff, sMoth; float sSpeed; // what was last applied, to notice a click
+        bool sRot, sMap, sEff, sMoth, sMark; // what was last applied, to notice a click
 
         public HSKPerformanceMod(ModContentPack content) : base(content) { }
 
@@ -20,96 +22,46 @@ namespace HSKPerformance
         {
             if (cfg != null) return;
             cfg = ProbeConfig.Load();
-            durationBuf = cfg.DurationSeconds.ToString();
-            warmupBuf = cfg.WarmupSeconds.ToString();
-            sRot = cfg.FixRotStorage; sMap = cfg.FixFarMap; sEff = cfg.FixPawnEffects; sMoth = cfg.FixMothballHediffs; sSpeed = cfg.PawnEffectsMinSpeed;
+            sRot = cfg.FixRotStorage; sMap = cfg.FixFarMap; sEff = cfg.FixPawnEffects; sMoth = cfg.FixMothballHediffs; sMark = cfg.FixMarkerColors;
         }
 
         public override void DoSettingsWindowContents(Rect inRect)
         {
             Ensure();
-            var view = new Rect(0f, 0f, inRect.width - 20f, 1180f);
+            var view = new Rect(0f, 0f, inRect.width - 20f, 380f);
             Widgets.BeginScrollView(inRect, ref scroll, view);
             var l = new Listing_Standard();
             l.Begin(view);
 
-            l.Label("Запись");
-            string state = ProbeSession.State == SessionState.Idle ? "не идёт" : ProbeSession.State.ToString();
-            l.Label("Состояние: " + state + ". Горячие клавиши: Ctrl+F9 запись, Ctrl+F10 списки тикающего, Ctrl+F8 лёгкий режим вкл/выкл.");
-            if (l.ButtonText(ProbeSession.State == SessionState.Idle ? "Начать запись (окно закроется)" : "Остановить запись"))
-            {
-                cfg.Save();
-                if (ProbeSession.State == SessionState.Idle) ProbeSession.Start(); else ProbeSession.Stop("settings button");
-                Find.WindowStack.TryRemove(typeof(Dialog_ModSettings), true);
-            }
-            l.Gap(6f);
-
-            l.CheckboxLabeled("Две записи подряд: сначала лёгкая, потом полная (одним нажатием)", ref cfg.TwoPhase,
-                "Ctrl+F9 запускает лёгкую запись, по её окончании сама начинается полная. Отчёты сохраняются в две папки: report-...-light и report-...-full. Ручная остановка отменяет вторую половину.");
-            l.CheckboxLabeled("Лёгкий режим для одиночной записи (корни и методы кадра, почти без нагрузки)", ref cfg.LightMode,
-                "Показывает реальную долю рендера и ожидания видеокарты. Моды не хукаются, таблицы по модам будут пустыми.");
-            l.Label("Длительность каждой записи, секунд");
-            l.TextFieldNumeric(ref cfg.DurationSeconds, ref durationBuf, 5f, 600f);
-            l.Label("Прогрев перед записью, секунд");
-            l.TextFieldNumeric(ref cfg.WarmupSeconds, ref warmupBuf, 0f, 60f);
-
-            l.Gap(8f);
-            l.Label("Что хукать (в лёгком режиме не действует)");
-            l.CheckboxLabeled("Тики модов", ref cfg.HookTick);
-            l.CheckboxLabeled("Update модов", ref cfg.HookUpdate);
-            l.CheckboxLabeled("Интерфейс модов (OnGUI)", ref cfg.HookGui);
-            l.CheckboxLabeled("Патчи Harmony других модов", ref cfg.HookHarmony);
-            l.CheckboxLabeled("Части ванильного тика", ref cfg.HookVanillaInternals);
-            l.CheckboxLabeled("Трекеры пешки (много вызовов, больше нагрузки)", ref cfg.HookPawnTrackers);
-
-            l.Gap(8f);
-            l.Label("Исправления производительности (действуют сразу, перезапуск не нужен)");
-            l.CheckboxLabeled("Быстрый поиск склада для гниения (HSK Core)", ref cfg.FixRotStorage,
-                "Заменяет медленный перебор всех хранилищ в CompBetterRottable_Patch на одну проверку клетки. Ответ проверяется по оригиналу на первых 1000 вызовах.");
-            l.CheckboxLabeled("Без косметических эффектов на высокой скорости: следы пешек, дыхание, рябь, дым разбитых капсул и кораблей", ref cfg.FixPawnEffects,
-                "Не создаются: следы и пар от дыхания пешек, рябь на воде и чёрный дым разбитых капсул и кораблей HSK Core. Дым печей и электростанций, огонь костров и пожары остаются как в ваниле. Работает на выбранной скорости и быстрее, на игру не влияет, только на вид.");
-            if (cfg.FixPawnEffects)
-            {
-                l.Label("Отключать эффекты, начиная со скорости:");
-                if (l.RadioButton("Вторая (Fast)", cfg.PawnEffectsMinSpeed <= 3f, 24f)) cfg.PawnEffectsMinSpeed = 3f;
-                if (l.RadioButton("Третья (Superfast)", cfg.PawnEffectsMinSpeed > 3f && cfg.PawnEffectsMinSpeed <= 6f, 24f)) cfg.PawnEffectsMinSpeed = 6f;
-                if (l.RadioButton("Четвёртая (Ultrafast)", cfg.PawnEffectsMinSpeed > 6f, 24f)) cfg.PawnEffectsMinSpeed = 15f;
-            }
-            l.CheckboxLabeled("Дальняя карта: на максимальном отдалении рисовать только стены, горы и пешек", ref cfg.FixFarMap,
-                "Когда клетка на экране меньше порога, игра не рисует землю, здания, растения, предметы, свет, туман, крыши и зоны. Вместо них один фон, стены одним цветом, горы другим. Пешки, животные и враги рисуются как обычно (точки Camera+). Заметно снижает нагрузку при сильном отдалении.");
+            l.Label("Исправления (действуют сразу, перезапуск не нужен)");
+            l.Gap(4f);
+            l.CheckboxLabeled("Быстрый поиск склада для гниения", ref cfg.FixRotStorage,
+                "HSK Core искал склад для каждой гниющей вещи перебором всех хранилищ. Теперь это одна проверка клетки.");
+            l.CheckboxLabeled("Без косметических эффектов на высокой скорости", ref cfg.FixPawnEffects,
+                "Со второй скорости и выше не создаются следы пешек, пар от дыхания, рябь на воде и дым разбитых капсул и кораблей. Дым печей, огонь костров и пожары остаются. На игру не влияет, только на вид.");
+            l.CheckboxLabeled("Заморозка мировых пешек с хроническими болезнями", ref cfg.FixMothballHediffs,
+                "Такие пешки перестают тикать каждый тик. Побочный эффект: эти болезни больше не убивают мировых пешек.");
+            l.CheckboxLabeled("Дальняя карта при большом отдалении", ref cfg.FixFarMap,
+                "Вместо обычной карты рисуются стены, горы, вода и болото на одном фоне. Пешки, животные и враги остаются. Сильно снижает нагрузку при отдалении.");
+            l.CheckboxLabeled("Маркеры Camera+: цвета по статусу, имя выбранной пешки", ref cfg.FixMarkerColors,
+                "Маркеры целиком закрашены по статусу: колонисты зелёные (выбранные, лежачие и в срыве остаются как в Camera+), гости светло-голубые, пленные оранжевые, рабы жёлтые, хищники не из вашей колонии красные. Под маркером выбранной пешки рисуется её имя. Зелёный цвет не действует на колонистов, для которых у вас есть своё правило в Camera+.");
             if (cfg.FixFarMap)
             {
-                l.Label("Включать, когда клетка на экране меньше " + cfg.FarMapPx.ToString("F0") + " пикселей. Больше число: режим включается при более близком зуме. Сейчас клетка " + FarMap.CurrentPx.ToString("F0") + " px (у вас от 9 при максимальном отдалении до 49 вплотную).");
+                l.Gap(2f);
+                l.Label("Включать, когда клетка меньше " + cfg.FarMapPx.ToString("F0") + " px (сейчас " + FarMap.CurrentPx.ToString("F0") + " px). Больше число: включается на более близком зуме.");
                 cfg.FarMapPx = l.Slider(cfg.FarMapPx, 4f, 60f);
                 FarMap.ThresholdPx = cfg.FarMapPx;
-                l.Label("Цвета дальней карты (RRGGBB): стены, горы, фон, вода, болото. Тёмные цвета лучше выделяют точки пешек.");
-                string w0 = cfg.FarMapWall, r0 = cfg.FarMapRock, b0 = cfg.FarMapBackground, wa0 = cfg.FarMapWater, m0 = cfg.FarMapMarsh;
-                cfg.FarMapWall = l.TextEntryLabeled("Стены", cfg.FarMapWall);
-                cfg.FarMapRock = l.TextEntryLabeled("Горы", cfg.FarMapRock);
-                cfg.FarMapBackground = l.TextEntryLabeled("Фон", cfg.FarMapBackground);
-                cfg.FarMapWater = l.TextEntryLabeled("Вода", cfg.FarMapWater);
-                cfg.FarMapMarsh = l.TextEntryLabeled("Болото", cfg.FarMapMarsh);
-                if (cfg.FarMapWall != w0 || cfg.FarMapRock != r0 || cfg.FarMapBackground != b0 || cfg.FarMapWater != wa0 || cfg.FarMapMarsh != m0)
-                    FarMap.SetColors(cfg.FarMapWall, cfg.FarMapRock, cfg.FarMapBackground, cfg.FarMapWater, cfg.FarMapMarsh);
             }
-            l.CheckboxLabeled("Разрешить замораживание мировых пешек с хроническими болезнями", ref cfg.FixMothballHediffs,
-                "Мировые пешки с хроническими болезнями перестают тикать каждый тик. Побочный эффект: эти болезни больше не убивают мировых пешек. Выключение возвращает прежнее поведение при следующей обработке пешек.");
-            string liveStatus = PerfFixes.LiveStatus();
-            if (liveStatus.Length > 0) l.Label(liveStatus);
-            if (cfg.FixRotStorage != sRot || cfg.FixFarMap != sMap || cfg.FixPawnEffects != sEff || cfg.FixMothballHediffs != sMoth || cfg.PawnEffectsMinSpeed != sSpeed)
+
+            if (cfg.FixRotStorage != sRot || cfg.FixFarMap != sMap || cfg.FixPawnEffects != sEff || cfg.FixMothballHediffs != sMoth || cfg.FixMarkerColors != sMark)
             {
-                sRot = cfg.FixRotStorage; sMap = cfg.FixFarMap; sEff = cfg.FixPawnEffects; sMoth = cfg.FixMothballHediffs; sSpeed = cfg.PawnEffectsMinSpeed;
+                sRot = cfg.FixRotStorage; sMap = cfg.FixFarMap; sEff = cfg.FixPawnEffects; sMoth = cfg.FixMothballHediffs; sMark = cfg.FixMarkerColors;
                 cfg.Save();
                 PerfFixes.Reload(cfg);
             }
 
-            l.Gap(8f);
-            if (l.ButtonText("Записать списки тикающего сейчас (Ctrl+F10)"))
-            {
-                string msg = WorldPawnDump.WriteStandalone();
-                ProbeSession.Notify(msg ?? "Списки доступны только внутри игры с загруженной картой.");
-            }
-            l.Label("Файл настроек: " + ProbeConfig.Dir);
+            l.Gap(14f);
+            l.Label("Запись производительности: Ctrl+F9. Остальные параметры (длительность записи, цвета карты, пороги скорости) в config.txt: " + ProbeConfig.Dir);
             l.End();
             Widgets.EndScrollView();
         }

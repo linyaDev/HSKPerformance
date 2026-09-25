@@ -37,6 +37,7 @@ namespace HSKPerformance
         static Color32 RockColor = new Color32(0x3A, 0x30, 0x2A, 255);
         static Color32 WaterColor = new Color32(0x26, 0x39, 0x4A, 255);   // very pale: only slightly lighter than the background
         static Color32 MarshColor = new Color32(0x2B, 0x3A, 0x2A, 255);
+        static Color32 DoorColor = new Color32(0x43, 0x4B, 0x53, 255);    // between the background and the walls: faint
         static readonly Color32 Clear = new Color32(0, 0, 0, 0);
         static Color BackgroundColor = new Color(0x12 / 255f, 0x16 / 255f, 0x14 / 255f, 1f);
         static bool colorsChanged;
@@ -54,7 +55,7 @@ namespace HSKPerformance
         }
 
         /// <summary>Sets the colours from three RRGGBB strings; a string that is not valid keeps the current colour. The texture is redrawn on the next far map frame.</summary>
-        public static void SetColors(string wall, string rock, string background, string water, string marsh)
+        public static void SetColors(string wall, string rock, string background, string water, string marsh, string door)
         {
             Color32 c;
             bool changed = false;
@@ -62,6 +63,7 @@ namespace HSKPerformance
             if (TryParseHex(rock, out c) && !c.Equals(RockColor)) { RockColor = c; changed = true; }
             if (TryParseHex(water, out c) && !c.Equals(WaterColor)) { WaterColor = c; changed = true; }
             if (TryParseHex(marsh, out c) && !c.Equals(MarshColor)) { MarshColor = c; changed = true; }
+            if (TryParseHex(door, out c) && !c.Equals(DoorColor)) { DoorColor = c; changed = true; }
             if (TryParseHex(background, out c))
             {
                 var bg = new Color(c.r / 255f, c.g / 255f, c.b / 255f, 1f);
@@ -73,8 +75,8 @@ namespace HSKPerformance
         // ---- state
         static bool failed;
         static int decidedFrame = -1;
-        static bool activeNow, announcedState, everOn;
-        static float lastAnnounce = -100f, lastPx;
+        static bool activeNow;
+        static float lastPx;
         static long activeFrames, inactiveFrames, rebuilds, dirtyApplied;
 
         static Map texMap;
@@ -94,7 +96,7 @@ namespace HSKPerformance
         {
             Enabled = cfg.FixFarMap;
             ThresholdPx = cfg.FarMapPx;
-            SetColors(cfg.FarMapWall, cfg.FarMapRock, cfg.FarMapBackground, cfg.FarMapWater, cfg.FarMapMarsh);
+            SetColors(cfg.FarMapWall, cfg.FarMapRock, cfg.FarMapBackground, cfg.FarMapWater, cfg.FarMapMarsh, cfg.FarMapDoor);
             var missing = new List<string>();
             int patched = 0;
 
@@ -145,6 +147,15 @@ namespace HSKPerformance
             }
             else missing.Add("MapDrawer.MapMeshDirty");
 
+            // 5) the Dubs Mint Minimap window shows the same map, so it is not drawn while the far map is active (soft dependency)
+            var mini = AccessTools.TypeByName("DubsMintMinimap.MainTabWindow_MiniMap");
+            var miniOnGui = mini == null ? null : AccessTools.Method(mini, "WindowOnGUI", Type.EmptyTypes);
+            if (miniOnGui != null && miniOnGui.ReturnType == typeof(void))
+            {
+                harmony.Patch(miniOnGui, prefix: skip);
+                PerfFixes.Status.Add("far map: Dubs Mint Minimap window is hidden while the far map is active");
+            }
+
             Installed = patched > 0 && missing.Count == 0;
             PerfFixes.Status.Add("far map: " + (Installed ? (Enabled ? "ON" : "installed but OFF") : "NOT installed") + " (" + patched + " patches; the map is replaced by walls/rock/background when a cell is smaller than "
                 + ThresholdPx.ToString("F1", CultureInfo.InvariantCulture) + " px on screen)" + (missing.Count > 0 ? "; NOT found: " + string.Join(", ", missing.ToArray()) : ""));
@@ -182,21 +193,8 @@ namespace HSKPerformance
             }
             catch (Exception e) { Fail(e); on = false; }
             if (on) activeFrames++; else inactiveFrames++;
-            if (on != activeNow) { activeNow = on; Announce(on); if (!on) dirty.Clear(); }
+            if (on != activeNow) { activeNow = on; if (!on) dirty.Clear(); }
             return on;
-        }
-
-        static void Announce(bool on)
-        {
-            if (on == announcedState) return;
-            if (!on && !everOn) { announcedState = false; return; }
-            float real = Time.realtimeSinceStartup;
-            if (real - lastAnnounce < 3f) return;
-            announcedState = on; lastAnnounce = real;
-            if (on) everOn = true;
-            string px = " (клетка " + lastPx.ToString("F1", CultureInfo.InvariantCulture) + " px)";
-            try { Verse.Log.Message("[HSK Performance] far map " + (on ? "ON" : "OFF") + px); } catch { }
-            try { Messages.Message(on ? "HSK Performance: дальняя карта ВКЛЮЧЕНА" + px : "HSK Performance: дальняя карта выключена, обычная отрисовка" + px, MessageTypeDefOf.SilentInput, false); } catch { }
         }
 
         static void Fail(Exception e)
@@ -204,7 +202,6 @@ namespace HSKPerformance
             if (failed) return;
             failed = true; activeNow = false;
             try { Verse.Log.Error("[HSK Performance] far map switched off after an error, normal drawing restored: " + e); } catch { }
-            try { Messages.Message("HSK Performance: дальняя карта отключена из-за ошибки, обычная отрисовка. Подробности в логе.", MessageTypeDefOf.NegativeEvent, false); } catch { }
         }
 
         // ------------------------------------------------------------------ patches
@@ -231,7 +228,7 @@ namespace HSKPerformance
                 var original = (List<Thing>)drawThingsField.GetValue(__instance);
                 pawnsOnly.Clear();
                 for (int i = 0; i < original.Count; i++)
-                    if (original[i] is Pawn) pawnsOnly.Add(original[i]);
+                    if (original[i] is Pawn || original[i] is PawnFlyer) pawnsOnly.Add(original[i]);   // Camera+ also draws markers for flying pawns
                 drawThingsField.SetValue(__instance, pawnsOnly);
                 __state = original;
             }
@@ -283,12 +280,13 @@ namespace HSKPerformance
             Graphics.DrawMesh(MeshPool.plane10, Matrix4x4.TRS(wall, Quaternion.identity, scale), wallMaterial, 0);
         }
 
-        /// <summary>One cell: rock and walls first, then marsh and water (very pale), otherwise transparent so the background shows.</summary>
+        /// <summary>One cell: doors, rock and walls first, then marsh and water (very pale), otherwise transparent so the background shows.</summary>
         static Color32 PixelFor(Map map, int index)
         {
             var b = map.edificeGrid[index];
             if (b != null)
             {
+                if (b is Building_Door) return DoorColor;
                 var def = b.def;
                 if (def.building != null && def.building.isNaturalRock) return RockColor;
                 var g = def.graphicData;
@@ -297,8 +295,8 @@ namespace HSKPerformance
             var t = map.terrainGrid.TerrainAt(index);
             if (t != null)
             {
-                // marsh is a shallow water terrain too, so it has to be checked first
-                if (t == TerrainDefOf.Marsh || (t.defName != null && t.defName.StartsWith("Marsh", StringComparison.Ordinal))) return MarshColor;
+                // marsh is a shallow water terrain too, so it has to be checked first; marshy soil (MarshyTerrain) is not drawn
+                if (t == TerrainDefOf.Marsh || string.Equals(t.defName, "Marsh", StringComparison.Ordinal)) return MarshColor;
                 if (t.IsWater) return WaterColor;
             }
             return Clear;
