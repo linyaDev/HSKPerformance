@@ -28,6 +28,11 @@ namespace HSKPerformance
         public int FixRotVerifyCalls = 1000;   // compare fast and original result for the first N calls (0 = trust blindly)
         public int WorldPawnRows = 300;        // rows in world_pawns.md (the CSV always has all of them)
         // Footprints, breath vapour, water ripples and the smoke of wrecks (HSK Core) are cosmetic flecks that the game ticks every tick. Skipped at game speed >= this (3 = Fast, the second speed).
+        // Far map: when a cell is smaller than far_map_px on screen, draw walls, rock and a background colour instead of the map, and only pawns on top.
+        public bool FixFarMap = true;
+        public float FarMapPx = 17f;
+        public string FarMapWall = "6E7680", FarMapRock = "3A302A", FarMapBackground = "121614";   // RRGGBB
+        public string FarMapWater = "26394A", FarMapMarsh = "2B3A2A";
         public bool FixPawnEffects = true;
         public float PawnEffectsMinSpeed = 3f;
         public bool FixMothballHediffs = true; // let world pawns with these chronic hediffs be mothballed (see PerfFixes)
@@ -69,6 +74,13 @@ namespace HSKPerformance
                     "fix_rot_storage=" + B(FixRotStorage) + "\n" +
                     "fix_rot_verify_calls=" + FixRotVerifyCalls.ToString(CultureInfo.InvariantCulture) + "\n" +
                     "world_pawn_rows=" + WorldPawnRows.ToString(CultureInfo.InvariantCulture) + "\n" +
+                    "fix_far_map=" + B(FixFarMap) + "\n" +
+                    "far_map_px=" + FarMapPx.ToString(CultureInfo.InvariantCulture) + "\n" +
+                    "far_map_wall=" + FarMapWall + "\n" +
+                    "far_map_rock=" + FarMapRock + "\n" +
+                    "far_map_background=" + FarMapBackground + "\n" +
+                    "far_map_water=" + FarMapWater + "\n" +
+                    "far_map_marsh=" + FarMapMarsh + "\n" +
                     "fix_pawn_effects=" + B(FixPawnEffects) + "\n" +
                     "pawn_effects_min_speed=" + PawnEffectsMinSpeed.ToString(CultureInfo.InvariantCulture) + "\n" +
                     "fix_mothball_hediffs=" + B(FixMothballHediffs) + "\n" +
@@ -106,6 +118,13 @@ namespace HSKPerformance
                         "fix_rot_storage=true\n" +
                         "fix_rot_verify_calls=1000\n" +
                         "world_pawn_rows=300\n" +
+                        "fix_far_map=true\n" +
+                        "far_map_px=17\n" +
+                        "far_map_wall=6E7680\n" +
+                        "far_map_rock=3A302A\n" +
+                        "far_map_background=121614\n" +
+                        "far_map_water=26394A\n" +
+                        "far_map_marsh=2B3A2A\n" +
                         "fix_pawn_effects=true\n" +
                         "pawn_effects_min_speed=3\n" +
                         "fix_mothball_hediffs=true\n" +
@@ -139,6 +158,13 @@ namespace HSKPerformance
                         case "fix_rot_storage": if (bool.TryParse(v, out b)) c.FixRotStorage = b; break;
                         case "fix_rot_verify_calls": if (int.TryParse(v, NumberStyles.Integer, CultureInfo.InvariantCulture, out n) && n >= 0) c.FixRotVerifyCalls = n; break;
                         case "world_pawn_rows": if (int.TryParse(v, NumberStyles.Integer, CultureInfo.InvariantCulture, out n) && n > 0) c.WorldPawnRows = n; break;
+                        case "fix_far_map": if (bool.TryParse(v, out b)) c.FixFarMap = b; break;
+                        case "far_map_px": { float fpx; if (float.TryParse(v, NumberStyles.Float, CultureInfo.InvariantCulture, out fpx) && fpx > 0f) c.FarMapPx = fpx; break; }
+                        case "far_map_wall": c.FarMapWall = v; break;
+                        case "far_map_rock": c.FarMapRock = v; break;
+                        case "far_map_background": c.FarMapBackground = v; break;
+                        case "far_map_water": c.FarMapWater = v; break;
+                        case "far_map_marsh": c.FarMapMarsh = v; break;
                         case "fix_pawn_effects": if (bool.TryParse(v, out b)) c.FixPawnEffects = b; break;
                         case "pawn_effects_min_speed": { float f; if (float.TryParse(v, NumberStyles.Float, CultureInfo.InvariantCulture, out f) && f >= 0f) c.PawnEffectsMinSpeed = f; break; }
                         case "fix_mothball_hediffs": if (bool.TryParse(v, out b)) c.FixMothballHediffs = b; break;

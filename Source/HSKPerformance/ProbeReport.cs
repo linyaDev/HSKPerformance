@@ -53,6 +53,8 @@ namespace HSKPerformance
                 + " (about " + Safe(() => (Screen.height / (2f * Find.CameraDriver.RootSize)).ToString("F0", Inv)) + " px per map cell), viewing "
                 + Safe(() => Find.CameraDriver.CurrentViewRect.Width + "x" + Find.CameraDriver.CurrentViewRect.Height) + " cells");
             l.Add("Flecks: " + Safe(() => FleckCensus.Describe()));
+            l.Add("Drawing: " + Safe(() => DrawCensus.Describe()));
+            l.Add("Far map: " + Safe(() => FarMap.ContextLine()));
             l.Add("In view: " + Safe(() => CountInView(false)) + " things, " + Safe(() => CountInView(true)) + " of them with a GUI overlay (labels)");
             l.Add("World pawns alive: " + Safe(() => Find.WorldPawns.AllPawnsAlive.Count()));
             l.Add("World objects: " + Safe(() => Find.WorldObjects.AllWorldObjects.Count));
@@ -199,7 +201,7 @@ namespace HSKPerformance
             sb.AppendLine();
             sb.AppendLine("End state:");
             foreach (var c in ProbeSession.EndContext ?? new List<string>())
-                if (c.StartsWith("Game speed") || c.StartsWith("Game ticks") || c.StartsWith("Current map things") || c.StartsWith("Current map spawned") || c.StartsWith("Flecks") || c.StartsWith("Camera") || c.StartsWith("In view")) sb.AppendLine("- " + c);
+                if (c.StartsWith("Game speed") || c.StartsWith("Game ticks") || c.StartsWith("Current map things") || c.StartsWith("Current map spawned") || c.StartsWith("Flecks") || c.StartsWith("Drawing") || c.StartsWith("Far map") || c.StartsWith("Camera") || c.StartsWith("In view")) sb.AppendLine("- " + c);
             sb.AppendLine();
 
             // ---- budget ----

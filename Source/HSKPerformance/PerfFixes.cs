@@ -27,6 +27,7 @@ namespace HSKPerformance
         {
             string s = RotStorageFix.Installed ? RotStorageFix.Live() : "";
             if (PawnEffectsFix.Installed) s = (s.Length > 0 ? s + "   |   " : "") + PawnEffectsFix.Live();
+            if (FarMap.Installed) s = (s.Length > 0 ? s + "   |   " : "") + FarMap.Live();
             return s;
         }
 
@@ -36,8 +37,11 @@ namespace HSKPerformance
             RotStorageFix.Enabled = cfg.FixRotStorage;
             PawnEffectsFix.Enabled = cfg.FixPawnEffects;
             PawnEffectsFix.MinSpeed = cfg.PawnEffectsMinSpeed;
+            FarMap.Enabled = cfg.FixFarMap && FarMap.Installed;
+            FarMap.ThresholdPx = cfg.FarMapPx;
+            FarMap.SetColors(cfg.FarMapWall, cfg.FarMapRock, cfg.FarMapBackground, cfg.FarMapWater, cfg.FarMapMarsh);
             MothballHediffFix.SetEnabled(cfg.FixMothballHediffs, cfg);
-            string line = "fixes switched from settings: rot storage " + (cfg.FixRotStorage ? "ON" : "off") + ", pawn effects/wreck smoke " + (cfg.FixPawnEffects ? "ON" : "off")
+            string line = "fixes switched from settings: rot storage " + (cfg.FixRotStorage ? "ON" : "off") + ", pawn effects/wreck smoke " + (cfg.FixPawnEffects ? "ON" : "off") + ", far map " + (cfg.FixFarMap ? "ON" : "off")
                 + " (from speed " + cfg.PawnEffectsMinSpeed.ToString(CultureInfo.InvariantCulture) + "), mothball hediffs " + (cfg.FixMothballHediffs ? "ON" : "off");
             Status.Add(line);
             try { Verse.Log.Message("[HSK Performance] " + line); } catch { }
@@ -53,6 +57,7 @@ namespace HSKPerformance
                 // on and off without restarting the game (Reload below).
                 RotStorageFix.Apply(harmony, cfg);
                 PawnEffectsFix.Apply(harmony, cfg);
+                FarMap.Apply(harmony, cfg);
                 if (cfg.FixMothballHediffs) MothballHediffFix.Apply(cfg);
                 else Status.Add("mothball hediff fix: off (settings / config.txt)");
             }
@@ -138,8 +143,8 @@ namespace HSKPerformance
             if (on) everOn = true;
             string speed = "";
             try { speed = " (скорость " + Find.TickManager.CurTimeSpeed + ")"; } catch { }
-            string text = on ? "HSK Performance: следы, пар от дыхания, рябь и дым обломков ОТКЛЮЧЕНЫ" + speed
-                             : "HSK Performance: следы, пар от дыхания, рябь и дым обломков снова ВКЛЮЧЕНЫ" + speed;
+            string text = on ? "HSK Performance: следы пешек, пар от дыхания, рябь на воде и дым разбитых капсул и кораблей ОТКЛЮЧЕНЫ" + speed
+                             : "HSK Performance: следы пешек, пар от дыхания, рябь на воде и дым разбитых капсул и кораблей снова ВКЛЮЧЕНЫ" + speed;
             Verse.Log.Message("[HSK Performance] pawn effects " + (on ? "OFF" : "ON") + speed);
             try { Messages.Message(text, MessageTypeDefOf.SilentInput, false); } catch { }
         }

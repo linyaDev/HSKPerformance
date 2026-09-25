@@ -41,6 +41,7 @@ namespace HSKPerformance
                     if (msg == null) msg = "World pawn dump is only available inside a running game.";
                     else Log.Message("[HSK Performance] " + msg);
                     Log.Message("[HSK Performance] flecks on the current map: " + FleckCensus.Describe(20));
+                    Log.Message("[HSK Performance] drawing: " + DrawCensus.Describe(20));
                     string live = PerfFixes.LiveStatus();
                     if (live.Length > 0) Log.Message("[HSK Performance] " + live);
                     ProbeSession.Notify(msg + (live.Length > 0 ? "   |   " + live : ""));
