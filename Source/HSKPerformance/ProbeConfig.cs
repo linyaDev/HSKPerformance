@@ -4,12 +4,12 @@ using System.Globalization;
 using System.IO;
 using Verse;
 
-namespace HSKPerfProbe
+namespace HSKPerformance
 {
     /// <summary>Tiny key=value config, created with defaults on first run.</summary>
     public sealed class ProbeConfig
     {
-        public int DurationSeconds = 90;
+        public int DurationSeconds = 45;
         public int WarmupSeconds = 3;
         public bool HookTick = true;
         public bool HookUpdate = true;
@@ -17,6 +17,8 @@ namespace HSKPerfProbe
         public bool HookHarmony = true;
         public bool HookVanillaInternals = true; // name the parts of DoSingleTick, MapPreTick/PostTick and WorldTick
         public bool HookPawnTrackers = true;     // name the trackers inside Pawn.Tick/TickInterval (many calls, more overhead)
+        public bool TwoPhase = true;             // one Ctrl+F9 = light recording, then automatically a full one (LightMode is then forced by the session)
+        public bool LightMode = false;           // only the three vanilla roots are hooked: almost no probe overhead, no per-mod numbers
         public int TopMods = 40;
         public int TopMethods = 60;
         public int TopDefs = 30;
@@ -25,6 +27,9 @@ namespace HSKPerfProbe
         public bool FixRotStorage = true;      // O(1) storage lookup in Core_SK's CompBetterRottable_Patch
         public int FixRotVerifyCalls = 1000;   // compare fast and original result for the first N calls (0 = trust blindly)
         public int WorldPawnRows = 300;        // rows in world_pawns.md (the CSV always has all of them)
+        // Footprints, breath vapour, water ripples and the smoke of wrecks (HSK Core) are cosmetic flecks that the game ticks every tick. Skipped at game speed >= this (3 = Fast, the second speed).
+        public bool FixPawnEffects = true;
+        public float PawnEffectsMinSpeed = 3f;
         public bool FixMothballHediffs = true; // let world pawns with these chronic hediffs be mothballed (see PerfFixes)
         // defNames, a trailing * means "starts with". Mothballing only freezes a pawn (age and records keep counting, hediffs stop progressing).
         public string[] MothballHediffs = { "DimonSever000_*", "Malnutrition", "GeneticDrugNeed", "HemogenCraving" };
@@ -33,10 +38,47 @@ namespace HSKPerfProbe
 
         public static string Dir
         {
-            get { return DirOverride ?? Path.Combine(GenFilePaths.SaveDataFolderPath, "HSKPerfProbe"); }
+            get { return DirOverride ?? Path.Combine(GenFilePaths.SaveDataFolderPath, "HSKPerformance"); }
         }
 
         static string FilePath { get { return Path.Combine(Dir, "config.txt"); } }
+
+        static string B(bool v) { return v ? "true" : "false"; }
+
+        /// <summary>Writes every key back (used by the mod settings window and the Ctrl+F8 shortcut).</summary>
+        public void Save()
+        {
+            try
+            {
+                Directory.CreateDirectory(Dir);
+                File.WriteAllText(FilePath,
+                    "# HSKPerformance config. Delete a line to get the default.\n" +
+                    "duration_seconds=" + DurationSeconds.ToString(CultureInfo.InvariantCulture) + "\n" +
+                    "warmup_seconds=" + WarmupSeconds.ToString(CultureInfo.InvariantCulture) + "\n" +
+                    "hook_tick=" + B(HookTick) + "\n" +
+                    "hook_update=" + B(HookUpdate) + "\n" +
+                    "hook_gui=" + B(HookGui) + "\n" +
+                    "hook_harmony_patches=" + B(HookHarmony) + "\n" +
+                    "hook_vanilla_internals=" + B(HookVanillaInternals) + "\n" +
+                    "hook_pawn_trackers=" + B(HookPawnTrackers) + "\n" +
+                    "two_phase=" + B(TwoPhase) + "\n" +
+                    "light_mode=" + B(LightMode) + "\n" +
+                    "top_mods=" + TopMods.ToString(CultureInfo.InvariantCulture) + "\n" +
+                    "top_methods=" + TopMethods.ToString(CultureInfo.InvariantCulture) + "\n" +
+                    "top_defs=" + TopDefs.ToString(CultureInfo.InvariantCulture) + "\n" +
+                    "fix_rot_storage=" + B(FixRotStorage) + "\n" +
+                    "fix_rot_verify_calls=" + FixRotVerifyCalls.ToString(CultureInfo.InvariantCulture) + "\n" +
+                    "world_pawn_rows=" + WorldPawnRows.ToString(CultureInfo.InvariantCulture) + "\n" +
+                    "fix_pawn_effects=" + B(FixPawnEffects) + "\n" +
+                    "pawn_effects_min_speed=" + PawnEffectsMinSpeed.ToString(CultureInfo.InvariantCulture) + "\n" +
+                    "fix_mothball_hediffs=" + B(FixMothballHediffs) + "\n" +
+                    "mothball_hediffs=" + string.Join(",", MothballHediffs) + "\n");
+            }
+            catch (Exception e)
+            {
+                Log.Warning("[HSK Performance] could not save config: " + e.Message);
+            }
+        }
 
         public static ProbeConfig Load()
         {
@@ -47,8 +89,8 @@ namespace HSKPerfProbe
                 if (!File.Exists(FilePath))
                 {
                     File.WriteAllText(FilePath,
-                        "# HSKPerfProbe config. Delete a line to get the default.\n" +
-                        "duration_seconds=90\n" +
+                        "# HSKPerformance config. Delete a line to get the default.\n" +
+                        "duration_seconds=45\n" +
                         "warmup_seconds=3\n" +
                         "hook_tick=true\n" +
                         "hook_update=true\n" +
@@ -56,12 +98,16 @@ namespace HSKPerfProbe
                         "hook_harmony_patches=true\n" +
                         "hook_vanilla_internals=true\n" +
                         "hook_pawn_trackers=true\n" +
+                        "two_phase=true\n" +
+                        "light_mode=false\n" +
                         "top_mods=40\n" +
                         "top_methods=60\n" +
                         "top_defs=30\n" +
                         "fix_rot_storage=true\n" +
                         "fix_rot_verify_calls=1000\n" +
                         "world_pawn_rows=300\n" +
+                        "fix_pawn_effects=true\n" +
+                        "pawn_effects_min_speed=3\n" +
                         "fix_mothball_hediffs=true\n" +
                         "mothball_hediffs=DimonSever000_*,Malnutrition,GeneticDrugNeed,HemogenCraving\n");
                     return c;
@@ -85,12 +131,16 @@ namespace HSKPerfProbe
                         case "hook_harmony_patches": if (bool.TryParse(v, out b)) c.HookHarmony = b; break;
                         case "hook_vanilla_internals": if (bool.TryParse(v, out b)) c.HookVanillaInternals = b; break;
                         case "hook_pawn_trackers": if (bool.TryParse(v, out b)) c.HookPawnTrackers = b; break;
+                        case "two_phase": if (bool.TryParse(v, out b)) c.TwoPhase = b; break;
+                        case "light_mode": if (bool.TryParse(v, out b)) c.LightMode = b; break;
                         case "top_mods": if (int.TryParse(v, NumberStyles.Integer, CultureInfo.InvariantCulture, out n) && n > 0) c.TopMods = n; break;
                         case "top_methods": if (int.TryParse(v, NumberStyles.Integer, CultureInfo.InvariantCulture, out n) && n > 0) c.TopMethods = n; break;
                         case "top_defs": if (int.TryParse(v, NumberStyles.Integer, CultureInfo.InvariantCulture, out n) && n > 0) c.TopDefs = n; break;
                         case "fix_rot_storage": if (bool.TryParse(v, out b)) c.FixRotStorage = b; break;
                         case "fix_rot_verify_calls": if (int.TryParse(v, NumberStyles.Integer, CultureInfo.InvariantCulture, out n) && n >= 0) c.FixRotVerifyCalls = n; break;
                         case "world_pawn_rows": if (int.TryParse(v, NumberStyles.Integer, CultureInfo.InvariantCulture, out n) && n > 0) c.WorldPawnRows = n; break;
+                        case "fix_pawn_effects": if (bool.TryParse(v, out b)) c.FixPawnEffects = b; break;
+                        case "pawn_effects_min_speed": { float f; if (float.TryParse(v, NumberStyles.Float, CultureInfo.InvariantCulture, out f) && f >= 0f) c.PawnEffectsMinSpeed = f; break; }
                         case "fix_mothball_hediffs": if (bool.TryParse(v, out b)) c.FixMothballHediffs = b; break;
                         case "mothball_hediffs":
                             var names = v.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries);
@@ -103,7 +153,7 @@ namespace HSKPerfProbe
             }
             catch (Exception e)
             {
-                Log.Warning("[HSKPerfProbe] config problem, using defaults: " + e.Message);
+                Log.Warning("[HSK Performance] config problem, using defaults: " + e.Message);
             }
             return c;
         }

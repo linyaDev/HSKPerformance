@@ -7,7 +7,7 @@ using System.Reflection;
 using HarmonyLib;
 using Verse;
 
-namespace HSKPerfProbe
+namespace HSKPerformance
 {
     public sealed class HookTarget
     {
@@ -131,6 +131,56 @@ namespace HSKPerfProbe
             "GUI|RimWorld.MapInterface:MapInterfaceOnGUI_BeforeMainTabs", "GUI|RimWorld.MapInterface:MapInterfaceOnGUI_AfterMainTabs",
             "GUI|RimWorld.InspectPaneUtility:InspectPaneOnGUI", "GUI|RimWorld.GlobalControls:GlobalControlsOnGUI",
             "GUI|Verse.Messages:MessagesDoGUI", "GUI|RimWorld.Planet.WorldSelector:WorldSelectorOnGUI",
+        };
+
+        // What Root.Update, Root_Play.Update, Map.MapUpdate, MapInterface.MapInterfaceUpdate and UIRoot.UIRootOnGUI call once per frame
+        // (read from the 1.6 source). Few calls per second, so these stay in light mode without adding measurable overhead.
+        static readonly string[] FrameInternals =
+        {
+            // Root.Update
+            "Update|ResolutionUtility:Update", "Update|RealTime:Update", "Update|LongEventHandler:LongEventsUpdate", "Update|SteamManager:Update",
+            "Update|PortraitsCache:PortraitsCacheUpdate", "Update|AttackTargetsCache:AttackTargetsCacheStaticUpdate",
+            "Update|Pawn_MeleeVerbs:PawnMeleeVerbsStaticUpdate", "Update|Storyteller:StorytellerStaticUpdate",
+            "Update|CaravanInventoryUtility:CaravanInventoryUtilityStaticUpdate", "Update|SoundRoot:Update",
+            // Root_Play.Update / Game.UpdatePlay
+            "Update|ShipCountdown:ShipCountdownUpdate", "Update|TargetHighlighter:TargetHighlighterUpdate", "Update|Game:UpdatePlay",
+            "Update|MusicManagerPlay:MusicUpdate", "Update|PerformanceBenchmarkUtility:CheckBenchmark",
+            "Update|TickManager:TickManagerUpdate", "Update|LetterStack:LetterStackUpdate", "Update|GameInfo:GameInfoUpdate",
+            "Update|GameComponentUtility:GameComponentUpdate", "Update|SignalManager:SignalManagerUpdate",
+            "Update|GlobalTextureAtlasManager:GlobalTextureAtlasManagerUpdate", "Update|WorldComponentUtility:WorldComponentUpdate",
+            // UIRoot_Play.UIRootUpdate / MapInterface.MapInterfaceUpdate
+            "Update|UIRoot_Play:UIRootUpdate", "Update|WorldInterface:WorldInterfaceUpdate", "Update|AlertsReadout:AlertsReadoutUpdate",
+            "Update|LessonAutoActivator:LessonAutoActivatorUpdate", "Update|Tutor:TutorUpdate", "Update|MapInterface:MapInterfaceUpdate",
+            "Update|Targeter:TargeterUpdate", "Update|SelectionDrawer:DrawSelectionOverlays", "Update|EnvironmentStatsDrawer:DrawRoomOverlays",
+            "Update|DesignatorManager:DesignatorManagerUpdate", "Update|RoofGrid:RoofGridUpdate", "Update|FertilityGrid:FertilityGridUpdate",
+            "Update|PollutionGrid:PollutionGridUpdate", "Update|MapComponentUtility:MapComponentOnDraw", "Update|PathFinder:OnDraw",
+            "Update|TerrainGrid:TerrainGridUpdate", "Update|ExitMapGrid:ExitMapGridUpdate", "Update|DeepResourceGrid:DeepResourceGridUpdate",
+            "Update|MapTemperature:TemperatureUpdate", "Update|MapGizmoUtility:MapUIUpdate",
+            // Map.MapUpdate
+            "Update|Map:MapUpdate", "Update|SkyManager:SkyManagerUpdate", "Update|PowerNetManager:UpdatePowerNetsAndConnections_First",
+            "Update|RegionGrid:UpdateClean", "Update|GlowGrid:GlowGridUpdate_First", "Update|LordManager:LordManagerUpdate",
+            "Update|PostTickVisuals:ProcessPostTickVisuals", "Update|GlobalRendererUtility:UpdateGlobalShadersParams",
+            "Update|PlantFallColors:SetFallShaderGlobals", "Update|WaterInfo:SetTextures", "Update|MapDrawer:MapMeshDrawerUpdate_First",
+            "Update|MapDrawer:DrawMapMesh", "Update|DynamicDrawManager:DrawDynamicThings", "Update|GameConditionManager:GameConditionManagerDraw",
+            "Update|MapEdgeClipDrawer:DrawClippers", "Update|DesignationManager:DrawDesignations", "Update|OverlayDrawer:DrawAllOverlays",
+            "Update|TemporaryThingDrawer:Draw", "Update|FleckManager:FleckManagerDraw", "Update|AreaManager:AreaManagerUpdate",
+            "Update|WeatherManager:WeatherManagerUpdate", "Update|FleckManager:FleckManagerUpdate", "Update|MapComponentUtility:MapComponentUpdate",
+
+            // coarse tick parts: a handful of calls per tick, components (Game/Map/World) are dispatched from here
+            "Tick|TickList:Tick", "Tick|Map:MapPreTick", "Tick|Map:MapPostTick", "Tick|World:WorldTick", "Tick|World:WorldPostTick",
+            "Tick|WorldObjectsHolder:WorldObjectsHolderTick", "Tick|GameComponentUtility:GameComponentTick",
+            "Tick|MapComponentUtility:MapComponentTick", "Tick|WorldComponentUtility:WorldComponentTick",
+
+            // UIRoot.UIRootOnGUI / UIRoot_Play.UIRootOnGUI (called several times per frame, once per GUI event)
+            "GUI|UnityGUIBugsFixer:OnGUI", "GUI|Text:StartOfOnGUI", "GUI|DelayedErrorWindowRequest:DelayedErrorWindowRequestOnGUI",
+            "GUI|TooltipHandler:DoTooltipGUI", "GUI|ShortcutKeys:ShortcutKeysOnGUI", "GUI|GameComponentUtility:GameComponentOnGUI",
+            "GUI|CellInspectorDrawer:OnGUI", "GUI|GameInfo:GameInfoOnGUI", "GUI|WorldInterface:WorldInterfaceOnGUI",
+            "GUI|Widgets:WidgetsOnGUI", "GUI|MapInterface:HandleMapClicks", "GUI|DebugTools:DebugToolsOnGUI",
+            "GUI|MapComponentUtility:MapComponentOnGUI", "GUI|Messages:MessagesDoGUI", "GUI|ResourceReadout:ResourceReadoutOnGUI",
+            "GUI|ColonistBar:ColonistBarOnGUI", "GUI|AlertsReadout:AlertsReadoutOnGUI", "GUI|ThingOverlays:ThingOverlaysOnGUI",
+            "GUI|WindowStack:WindowStackOnGUI", "GUI|MainButtonsRoot:MainButtonsOnGUI", "GUI|GlobalControls:GlobalControlsOnGUI",
+            "GUI|MapInterface:MapInterfaceOnGUI_BeforeMainTabs", "GUI|MapInterface:MapInterfaceOnGUI_AfterMainTabs",
+            "GUI|InspectPaneUtility:InspectPaneOnGUI", "GUI|UIRoot:UIRootOnGUI",
         };
 
         // What TickManager.DoSingleTick, Map.MapPreTick/MapPostTick and World.WorldTick actually call (read from the 1.6 source).
@@ -311,9 +361,9 @@ namespace HSKPerfProbe
             TickRoot = UpdateRoot = GuiRoot = null;
             PatchedOk = PatchedFail = HarmonyPatchesSkipped = EmptySkipped = 0;
 
-            ScanFamilies(BuildFamilies(cfg));
+            if (!cfg.LightMode) ScanFamilies(BuildFamilies(cfg));
             AddSinks(cfg);
-            if (cfg.HookHarmony) AddHarmonyPatches();
+            if (cfg.HookHarmony && !cfg.LightMode) AddHarmonyPatches();
             AddCalibration();
 
             foreach (var kv in counts) FamilyCounts.Add(kv);
@@ -362,12 +412,13 @@ namespace HSKPerfProbe
 
         static void AddSinks(ProbeConfig cfg)
         {
-            AddSinkList(cfg, Sinks, "Vanilla hot spot");
-            if (cfg.HookVanillaInternals) AddSinkList(cfg, TickInternals, "Vanilla tick internals");
-            if (cfg.HookPawnTrackers) AddSinkList(cfg, PawnTrackers, "Pawn trackers");
+            AddSinkList(cfg, Sinks, "Vanilla hot spot", cfg.LightMode);
+            if (cfg.LightMode) AddSinkList(cfg, FrameInternals, "Vanilla frame internals", false);
+            if (cfg.HookVanillaInternals && !cfg.LightMode) AddSinkList(cfg, TickInternals, "Vanilla tick internals", false);
+            if (cfg.HookPawnTrackers && !cfg.LightMode) AddSinkList(cfg, PawnTrackers, "Pawn trackers", false);
         }
 
-        static void AddSinkList(ProbeConfig cfg, string[] entries, string label)
+        static void AddSinkList(ProbeConfig cfg, string[] entries, string label, bool rootsOnly)
         {
             foreach (var entry in entries)
             {
@@ -377,6 +428,7 @@ namespace HSKPerfProbe
                 if (cat == "Update" && !cfg.HookUpdate) continue;
                 if (cat == "GUI" && !cfg.HookGui) continue;
                 bool root = parts.Length > 2 && parts[2] == "root";
+                if (rootsOnly && !root) continue;
                 var tm = parts[1].Split(':');
                 var type = T(tm[0]);
                 if (type == null) { Notes.Add(label + ": type missing: " + parts[1]); continue; }

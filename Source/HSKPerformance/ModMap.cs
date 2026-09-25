@@ -2,7 +2,7 @@ using System.Collections.Generic;
 using System.Reflection;
 using Verse;
 
-namespace HSKPerfProbe
+namespace HSKPerformance
 {
     /// <summary>Maps an assembly (or a Def) to the mod it belongs to.</summary>
     public static class ModMap

@@ -1,19 +1,25 @@
 <?xml version="1.0" encoding="utf-8"?>
 <ModMetaData>
-	<name>HSKPerfProbe</name>
+	<name>HSK Performance</name>
 	<author>linyaDev</author>
 	<supportedVersions>
 		<li>1.6</li>
 	</supportedVersions>
-	<packageId>linya.hskperfprobe</packageId>
+	<packageId>linya.hskperformance</packageId>
 	<description>
 [English]
-Performance probe that writes human/LLM-readable reports. Press Ctrl+F9 to start a capture, Ctrl+F9 again (or wait for the timeout) to stop and save. Per-mod exclusive CPU cost for Tick / Update / GUI / Harmony patches, per-def cost, frame time percentiles and a per-second timeline. Nothing is patched while not recording.
+Performance tools for the HSK modpack: a profiler that writes reports a person (or an LLM) can read, and a few permanent fixes with on/off switches.
 
-Reports: LocalLow/Ludeon Studios/RimWorld by Ludeon Studios/HSKPerfProbe/report-*/report.md (+ CSV files).
+Profiler: Ctrl+F9 records a light capture (vanilla roots and per-frame internals, almost no overhead) and then a full one (every mod's Tick / Update / GUI / Harmony code) automatically. Reports go to LocalLow/Ludeon Studios/RimWorld by Ludeon Studios/HSKPerformance/report-*/report.md (+ CSV files): per-mod and per-method cost, frame phases, camera and fleck census, timeline. Ctrl+F8 switches light mode, Ctrl+F10 lists what is ticked.
+
+Fixes (Options > Mod settings > HSK Performance, take effect at once): fast storage lookup for rotting items (HSK Core), no cosmetic effects (footprints, breath vapour, water ripples, wreck smoke) from the second game speed up, mothballing of world pawns with chronic hediffs.
 
 [Russian]
-Профилировщик, который сохраняет читаемые отчёты (Markdown + CSV). Ctrl+F9 - начать запись, Ctrl+F9 ещё раз (или по таймауту) - остановить и сохранить. Пока запись не идёт, мод ничего не патчит.
+Инструменты производительности для сборки HSK: профилировщик с читаемыми отчётами (Markdown + CSV) и несколько постоянных исправлений, которые включаются и выключаются галками в настройках мода.
+
+Профилировщик: Ctrl+F9 сначала делает лёгкую запись (корни ваниля и методы кадра, почти без нагрузки), затем сам полную (тики, Update, GUI и патчи Harmony всех модов). Отчёты лежат в LocalLow/Ludeon Studios/RimWorld by Ludeon Studios/HSKPerformance/report-*/report.md. Ctrl+F8 переключает лёгкий режим, Ctrl+F10 показывает, что тикается.
+
+Исправления (Настройки - Настройки модов - HSK Performance, действуют сразу): быстрый поиск склада для гниения (HSK Core), без косметических эффектов (следы, дыхание, рябь, дым обломков) со второй скорости и выше, заморозка мировых пешек с хроническими болезнями.
 	</description>
 	<modDependencies>
 		<li>

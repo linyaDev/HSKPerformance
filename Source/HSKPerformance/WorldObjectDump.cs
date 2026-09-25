@@ -9,7 +9,7 @@ using RimWorld;
 using RimWorld.Planet;
 using Verse;
 
-namespace HSKPerfProbe
+namespace HSKPerformance
 {
     /// <summary>
     /// Every world object is ticked on every tick by WorldObjectsHolder.WorldObjectsHolderTick: WorldObject.DoTick (wrapper),
@@ -121,7 +121,7 @@ namespace HSKPerfProbe
             }
             catch (Exception e)
             {
-                try { Log.Error("[HSKPerfProbe] world object dump failed: " + e); } catch { }
+                try { Log.Error("[HSK Performance] world object dump failed: " + e); } catch { }
                 return null;
             }
         }

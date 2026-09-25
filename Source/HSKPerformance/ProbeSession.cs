@@ -6,7 +6,7 @@ using HarmonyLib;
 using UnityEngine;
 using Verse;
 
-namespace HSKPerfProbe
+namespace HSKPerformance
 {
     public sealed class TimelineRow
     {
@@ -71,12 +71,25 @@ namespace HSKPerfProbe
 
         // ------------------------------------------------------------------ start
 
+        /// <summary>0 = single recording, 1 = light half of a two-phase run, 2 = full half of a two-phase run.</summary>
+        public static int Phase;
+
+        /// <summary>Ctrl+F9: with two_phase on, a light recording first and, when it ends by itself, a full one right after.</summary>
         public static void Start()
         {
             if (State != SessionState.Idle) return;
+            StartPhase(ProbeConfig.Load().TwoPhase ? 1 : 0);
+        }
+
+        static void StartPhase(int phase)
+        {
+            if (State != SessionState.Idle) return;
+            Phase = phase;
             try
             {
                 Cfg = ProbeConfig.Load();
+                if (phase == 1) Cfg.LightMode = true;
+                else if (phase == 2) Cfg.LightMode = false;
                 ModMap.Build();
                 HookCatalog.Build(Cfg);
                 harmony = new Harmony(ProbeCore.HarmonyId);
@@ -92,12 +105,12 @@ namespace HSKPerfProbe
                 LastMessage = "";
                 hadCaptureData = false;
                 State = SessionState.Installing;
-                Log.Message("[HSKPerfProbe] catalog built: " + HookCatalog.Targets.Count + " hooks in "
+                Log.Message("[HSK Performance] catalog built: " + HookCatalog.Targets.Count + " hooks in "
                     + HookCatalog.BuildMs.ToString("F0", CultureInfo.InvariantCulture) + " ms. Installing over several frames...");
             }
             catch (Exception e)
             {
-                Log.Error("[HSKPerfProbe] failed to start: " + e);
+                Log.Error("[HSK Performance] failed to start: " + e);
                 Abort("start failed: " + e.Message);
             }
         }
@@ -168,7 +181,7 @@ namespace HSKPerfProbe
             warmEndReal = now + Cfg.WarmupSeconds;
             CaptureStartReal = now;
             State = SessionState.Warmup;
-            Log.Message("[HSKPerfProbe] hooks installed: " + HookCatalog.PatchedOk + " ok, " + HookCatalog.PatchedFail + " failed ("
+            Log.Message("[HSK Performance] mode: " + (Cfg.LightMode ? "LIGHT (vanilla roots and per-frame internals)" : "FULL (all hooks)") + ". hooks installed: " + HookCatalog.PatchedOk + " ok, " + HookCatalog.PatchedFail + " failed ("
                 + HookCatalog.InstallMs.ToString("F0", CultureInfo.InvariantCulture) + " ms of patching). Warming up "
                 + Cfg.WarmupSeconds + " s, then recording " + Cfg.DurationSeconds + " s (Ctrl+F9 stops early).");
             if (Cfg.WarmupSeconds <= 0) BeginCapture(now);
@@ -177,6 +190,7 @@ namespace HSKPerfProbe
         static void BeginCapture(double now)
         {
             ProbeCore.ResetAll();
+            FramePhases.Reset();
             Frames = 0; SumFrameMs = 0;
             FrameMs.Clear(); Rows.Clear();
             CaptureStartReal = now;
@@ -249,12 +263,12 @@ namespace HSKPerfProbe
                     EndContext = ProbeReport.Context();
                     string dir = ProbeReport.Write();
                     LastMessage = "Report saved: " + dir;
-                    Log.Message("[HSKPerfProbe] " + LastMessage);
+                    Log.Message("[HSK Performance] " + LastMessage);
                 }
                 catch (Exception e)
                 {
                     LastMessage = "Report failed: " + e.Message;
-                    Log.Error("[HSKPerfProbe] report failed: " + e);
+                    Log.Error("[HSK Performance] report failed: " + e);
                 }
             }
             else
@@ -262,13 +276,28 @@ namespace HSKPerfProbe
                 LastMessage = "Stopped before any data was captured.";
             }
             LastMessageUntil = now + 45;
+            // the second half only follows when the first one ran to its end; a manual stop cancels the whole run
+            chainNext = Phase == 1 && reason.StartsWith("timeout", StringComparison.Ordinal) && Frames > 0;
+            if (Phase != 0 && !chainNext && Phase == 1) LastMessage += "  (second half cancelled)";
             BeginRemove();
+        }
+
+        static bool chainNext;
+
+        /// <summary>Called when the hooks of a finished recording are gone.</summary>
+        static void OnIdle()
+        {
+            if (!chainNext) { if (Phase == 2) LastMessage = "Both recordings are saved (light, then full). " + LastMessage; Phase = 0; return; }
+            chainNext = false;
+            Log.Message("[HSK Performance] light half done, starting the full half.");
+            StartPhase(2);
         }
 
         public static void Abort(string why)
         {
+            chainNext = false; Phase = 0;
             ProbeCore.Active = false;
-            LastMessage = "PerfProbe aborted: " + why;
+            LastMessage = "HSK Performance aborted: " + why;
             LastMessageUntil = Time.realtimeSinceStartup + 30;
             BeginRemove();
         }
@@ -278,7 +307,7 @@ namespace HSKPerfProbe
             // only hooks that were actually installed need to go: cursor is how far installation got
             if (State == SessionState.Installing) { }
             else cursor = HookCatalog.Targets.Count;
-            if (harmony == null || cursor <= 0) { State = SessionState.Idle; return; }
+            if (harmony == null || cursor <= 0) { State = SessionState.Idle; OnIdle(); return; }
             removeUpTo = cursor;
             cursor = 0;
             State = SessionState.Removing;
@@ -300,22 +329,28 @@ namespace HSKPerfProbe
             State = SessionState.Idle;
             // safety net: anything of ours that is still attached (e.g. after an error) goes now
             try { harmony.UnpatchAll(ProbeCore.HarmonyId); } catch { }
-            Log.Message("[HSKPerfProbe] hooks removed.");
+            Log.Message("[HSK Performance] hooks removed.");
+            OnIdle();
         }
 
         // ------------------------------------------------------------------ overlay
+
+        static string PhaseLabel()
+        {
+            return Phase == 1 ? " 1/2 (light)" : Phase == 2 ? " 2/2 (full)" : "";
+        }
 
         public static string Overlay(double now)
         {
             switch (State)
             {
                 case SessionState.Installing:
-                    return "PerfProbe: installing hooks " + cursor + "/" + HookCatalog.Targets.Count + "  (Ctrl+F9 cancels)";
+                    return "HSK Performance: installing hooks " + cursor + "/" + HookCatalog.Targets.Count + "  (Ctrl+F9 cancels)";
                 case SessionState.Warmup:
-                    return "PerfProbe: warming up... (Ctrl+F9 cancels)";
+                    return "HSK Performance: warming up... (Ctrl+F9 cancels)";
                 case SessionState.Recording:
-                    return "PerfProbe REC " + ElapsedCapture(now).ToString("F0", CultureInfo.InvariantCulture) + "/" + Cfg.DurationSeconds
-                        + " s  -  Ctrl+F9 = stop and save";
+                    return "HSK Performance REC" + PhaseLabel() + " " + ElapsedCapture(now).ToString("F0", CultureInfo.InvariantCulture) + "/" + Cfg.DurationSeconds
+                        + " s  -  Ctrl+F9 = stop and save" + (Phase == 1 ? " (cancels the full half)" : "");
                 case SessionState.Removing:
                     return (string.IsNullOrEmpty(LastMessage) ? "" : LastMessage + "   |   ") + "removing hooks " + cursor + "/" + removeUpTo;
             }

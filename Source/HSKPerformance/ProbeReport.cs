@@ -9,7 +9,7 @@ using RimWorld;
 using UnityEngine;
 using Verse;
 
-namespace HSKPerfProbe
+namespace HSKPerformance
 {
     /// <summary>Writes report.md (for reading) and CSV files (for scripts).</summary>
     public static class ProbeReport
@@ -49,12 +49,28 @@ namespace HSKPerfProbe
             l.Add("Current map things: " + Safe(() => Find.CurrentMap.listerThings.AllThings.Count));
             l.Add("Current map spawned pawns: " + Safe(() => Find.CurrentMap.mapPawns.AllPawnsSpawned.Count));
             l.Add("Current map colonists: " + Safe(() => Find.CurrentMap.mapPawns.FreeColonistsSpawnedCount));
+            l.Add("Camera: zoom " + Safe(() => Find.CameraDriver.CurrentZoom) + ", root size " + Safe(() => Find.CameraDriver.RootSize.ToString("F1", Inv))
+                + " (about " + Safe(() => (Screen.height / (2f * Find.CameraDriver.RootSize)).ToString("F0", Inv)) + " px per map cell), viewing "
+                + Safe(() => Find.CameraDriver.CurrentViewRect.Width + "x" + Find.CameraDriver.CurrentViewRect.Height) + " cells");
+            l.Add("Flecks: " + Safe(() => FleckCensus.Describe()));
+            l.Add("In view: " + Safe(() => CountInView(false)) + " things, " + Safe(() => CountInView(true)) + " of them with a GUI overlay (labels)");
             l.Add("World pawns alive: " + Safe(() => Find.WorldPawns.AllPawnsAlive.Count()));
             l.Add("World objects: " + Safe(() => Find.WorldObjects.AllWorldObjects.Count));
             l.Add("Resolution: " + Safe(() => Screen.width) + "x" + Safe(() => Screen.height) + ", vSync=" + Safe(() => QualitySettings.vSyncCount) + ", targetFrameRate=" + Safe(() => Application.targetFrameRate));
             l.Add("CPU: " + Safe(() => SystemInfo.processorType) + " (" + Safe(() => SystemInfo.processorCount) + " threads), RAM " + Safe(() => SystemInfo.systemMemorySize) + " MB");
             l.Add("GPU: " + Safe(() => SystemInfo.graphicsDeviceName) + " (" + Safe(() => SystemInfo.graphicsMemorySize) + " MB)");
             return l;
+        }
+
+        static int CountInView(bool onlyWithOverlay)
+        {
+            var rect = Find.CameraDriver.CurrentViewRect;
+            var map = Find.CurrentMap;
+            var list = onlyWithOverlay ? map.listerThings.ThingsInGroup(ThingRequestGroup.HasGUIOverlay) : map.listerThings.AllThings;
+            int n = 0;
+            for (int i = 0; i < list.Count; i++)
+                if (list[i].Spawned && rect.Contains(list[i].Position)) n++;
+            return n;
         }
 
         static double Percentile(float[] sorted, double p)
@@ -69,7 +85,7 @@ namespace HSKPerfProbe
         public static string Write()
         {
             var cfg = ProbeSession.Cfg;
-            string dir = Path.Combine(ProbeConfig.Dir, "report-" + ProbeSession.StartedAt.ToString("yyyyMMdd-HHmmss", Inv));
+            string dir = Path.Combine(ProbeConfig.Dir, "report-" + ProbeSession.StartedAt.ToString("yyyyMMdd-HHmmss", Inv) + (ProbeSession.Phase == 1 ? "-light" : ProbeSession.Phase == 2 ? "-full" : ""));
             Directory.CreateDirectory(dir);
 
             double toMs = 1000.0 / Stopwatch.Frequency;
@@ -149,7 +165,7 @@ namespace HSKPerfProbe
             double rawPerSec = totRaw * toMs / secs;
 
             var sb = new StringBuilder(64 * 1024);
-            sb.AppendLine("# HSKPerfProbe report");
+            sb.AppendLine("# HSK Performance report");
             sb.AppendLine();
             sb.AppendLine("Recorded " + ProbeSession.StartedAt.ToString("yyyy-MM-dd HH:mm:ss", Inv) + ", stopped by: " + ProbeSession.StopReason + ".");
             sb.AppendLine();
@@ -171,6 +187,8 @@ namespace HSKPerfProbe
                 + " ms/s, so **" + F(overheadPerSec, 0) + " ms/s** (" + F(overheadPerSec / 10.0, 1) + " % of wall) was measurement overhead and has been subtracted from every row (raw values are in methods.csv). "
                 + "The game still ran slower than normal while recording, and inclusive numbers (frame budget, timeline) still contain the overhead.");
             sb.AppendLine("- Empty methods skipped (nothing to measure): " + HookCatalog.EmptySkipped);
+            sb.AppendLine("- Mode: **" + (cfg.LightMode ? "LIGHT" : "FULL") + "**" + (ProbeSession.Phase == 1 ? " (half 1 of 2 of an automatic light+full run)" : ProbeSession.Phase == 2 ? " (half 2 of 2, right after the light half)" : ""));
+            if (cfg.LightMode) sb.AppendLine("- **Light mode**: only the vanilla roots and about 100 per-frame vanilla methods are hooked (a few thousand calls per second), so the probe overhead is tiny and the frame numbers are close to a normal run. Mod hooks are off on purpose, so per-mod tables are empty; the method table shows the vanilla frame parts. Inclusive time of GameComponentUpdate, MapComponentUpdate and MapComponentTick covers all components of all mods.");
             if (Safe(() => ModsConfig.IsActive("dubwise.dubsperformanceanalyzer.steam")) == "True")
                 sb.AppendLine("- Note: Dubs Performance Analyzer is enabled. Its own patches were left out of the Harmony rows, but keep it closed while recording so its overhead does not add up with ours.");
             if (ticks == 0) sb.AppendLine("- **Warning: no ticks were recorded** (game paused, or not in a running game). Tick numbers are meaningless in this report.");
@@ -181,7 +199,7 @@ namespace HSKPerfProbe
             sb.AppendLine();
             sb.AppendLine("End state:");
             foreach (var c in ProbeSession.EndContext ?? new List<string>())
-                if (c.StartsWith("Game speed") || c.StartsWith("Game ticks") || c.StartsWith("Current map things") || c.StartsWith("Current map spawned")) sb.AppendLine("- " + c);
+                if (c.StartsWith("Game speed") || c.StartsWith("Game ticks") || c.StartsWith("Current map things") || c.StartsWith("Current map spawned") || c.StartsWith("Flecks") || c.StartsWith("Camera") || c.StartsWith("In view")) sb.AppendLine("- " + c);
             sb.AppendLine();
 
             // ---- budget ----
@@ -203,6 +221,41 @@ namespace HSKPerfProbe
                 sb.AppendLine("Per tick: average **" + F(tickRoot.InclTicks * toMs / ticks, 3) + " ms**, worst single tick " + F(tickRoot.MaxInclTicks * toMs) + " ms (budget at 60 TPS is 16.67 ms).");
             sb.AppendLine();
             sb.AppendLine("A large \"rest\" share with small Update/GUI numbers means the frame is limited by rendering/GPU/vsync rather than by mod code.");
+            sb.AppendLine();
+
+            // ---- Unity frame phases (checkpoints, no method hooks) ----
+            sb.AppendLine("## Frame phases (Unity checkpoints)");
+            sb.AppendLine();
+            long pf = FramePhases.Frames;
+            if (!FramePhases.Installed) sb.AppendLine("Checkpoints were not installed (see the game log).");
+            else if (pf == 0) sb.AppendLine("No complete frames were seen by the checkpoints.");
+            else
+            {
+                double perFrame = 1.0 / pf * toMs;
+                double scripts = FramePhases.ScriptsTicks * perFrame, wait = FramePhases.WaitTicks * perFrame;
+                long fc = FramePhases.FramesWithCameras;
+                double engine = fc > 0 ? FramePhases.EngineTicks * toMs / fc : 0, render = fc > 0 ? FramePhases.RenderTicks * toMs / fc : 0, gui = fc > 0 ? FramePhases.GuiTicks * toMs / fc : 0;
+                // frames without camera events: everything between the last LateUpdate and the end of the frame
+                long noCam = pf - fc;
+                double noCamMs = noCam > 0 ? FramePhases.NoCameraEngineTicks * toMs / noCam : 0;
+                double frameTotal = scripts + wait + (fc > 0 ? engine + render + gui : 0) * fc / (double)pf + noCamMs * noCam / pf;
+                Func<double, string> pc = v => F(frameTotal > 0 ? v / frameTotal * 100 : 0, 1);
+                double engineAvg = engine * fc / pf, renderAvg = render * fc / pf, guiAvg = gui * fc / pf, noCamAvg = noCamMs * noCam / pf;
+                sb.AppendLine("Every frame is cut at fixed points. Frames measured: " + pf + " (" + fc + " with camera events). Numbers are averages per frame and include the probe's own overhead.");
+                sb.AppendLine();
+                sb.AppendLine("| phase | ms | % of frame | what is in it |");
+                sb.AppendLine("|---|---:|---:|---|");
+                sb.AppendLine("| scripts: first Update to last LateUpdate | " + F(scripts) + " | " + pc(scripts) + " | all Update/LateUpdate code, ticks, coroutines, animation. Hooked Root_Play.Update inside it: " + F(updIncl) + " ms |");
+                sb.AppendLine("| engine work before drawing | " + F(engineAvg) + " | " + pc(engineAvg) + " | culling and scene preparation up to the first camera |");
+                sb.AppendLine("| cameras: CPU side of drawing | " + F(renderAvg) + " | " + pc(renderAvg) + " | from the first camera culling to the last camera render |");
+                sb.AppendLine("| after cameras: interface (OnGUI) | " + F(guiAvg) + " | " + pc(guiAvg) + " | UIRootOnGUI runs several times per frame. Hooked inside it: " + F(guiIncl) + " ms |");
+                if (noCam > 0) sb.AppendLine("| no camera events (LateUpdate to end of frame) | " + F(noCamAvg) + " | " + pc(noCamAvg) + " | frames where Unity did not report a camera render |");
+                sb.AppendLine("| end of frame to next Update: present, GPU and vsync wait | " + F(wait) + " | " + pc(wait) + " | worst " + F(FramePhases.MaxWaitTicks * toMs) + " ms |");
+                sb.AppendLine("| sum | " + F(frameTotal) + " | 100.0 | Unity's own frame average was " + F(avgFrame) + " ms |");
+                sb.AppendLine();
+                sb.AppendLine("If the last-but-one row is large, the CPU is waiting for the graphics card or for vsync and mod code is not the limit. If \"scripts\" is much bigger than the hooked Root_Play.Update, other scripts (other mods' MonoBehaviours, coroutines) take the difference.");
+                if (!FramePhases.CameraEventsSeen) sb.AppendLine("Note: no camera callbacks fired, so the split between engine, cameras and interface is not available.");
+            }
             sb.AppendLine();
 
             sb.AppendLine("## Frame time distribution");

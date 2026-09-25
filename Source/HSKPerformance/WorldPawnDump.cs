@@ -10,7 +10,7 @@ using RimWorld;
 using RimWorld.Planet;
 using Verse;
 
-namespace HSKPerfProbe
+namespace HSKPerformance
 {
     /// <summary>
     /// World pawns that are NOT mothballed are ticked by WorldPawns.WorldPawnsTick every single tick, like colonists.
@@ -66,7 +66,7 @@ namespace HSKPerfProbe
                 if (Current.ProgramState != ProgramState.Playing || Find.WorldPawns == null || Find.TickManager == null) return null;
                 if (FAlive == null || FMothballed == null)
                 {
-                    Log.Warning("[HSKPerfProbe] WorldPawns fields not found (game changed?), world pawn dump skipped");
+                    Log.Warning("[HSK Performance] WorldPawns fields not found (game changed?), world pawn dump skipped");
                     return null;
                 }
                 Directory.CreateDirectory(dir);
@@ -96,7 +96,7 @@ namespace HSKPerfProbe
             }
             catch (Exception e)
             {
-                try { Log.Error("[HSKPerfProbe] world pawn dump failed: " + e); } catch { }
+                try { Log.Error("[HSK Performance] world pawn dump failed: " + e); } catch { }
                 return null;
             }
         }

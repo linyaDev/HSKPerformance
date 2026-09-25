@@ -7,7 +7,7 @@ using System.Text;
 using RimWorld;
 using Verse;
 
-namespace HSKPerfProbe
+namespace HSKPerformance
 {
     /// <summary>
     /// Inventory of the things that the tick manager processes: everything on the maps whose def has tickerType Normal
@@ -142,7 +142,7 @@ namespace HSKPerfProbe
             }
             catch (Exception e)
             {
-                try { Log.Error("[HSKPerfProbe] ticking things dump failed: " + e); } catch { }
+                try { Log.Error("[HSK Performance] ticking things dump failed: " + e); } catch { }
                 return null;
             }
         }

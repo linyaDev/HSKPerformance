@@ -2,7 +2,7 @@ using System;
 using UnityEngine;
 using Verse;
 
-namespace HSKPerfProbe
+namespace HSKPerformance
 {
     /// <summary>
     /// Plain Unity behaviour: runs outside RimWorld's own Update/OnGUI, so starting and stopping
@@ -27,20 +27,29 @@ namespace HSKPerfProbe
                         default: ProbeSession.Stop("hotkey"); break;
                     }
                 }
+                if (ctrl && Input.GetKeyDown(KeyCode.F8) && ProbeSession.State == SessionState.Idle)
+                {
+                    var c = ProbeConfig.Load();
+                    c.LightMode = !c.LightMode;
+                    c.Save();
+                    Log.Message("[HSK Performance] light mode " + (c.LightMode ? "ON" : "OFF") + " (Ctrl+F8), applies to the next recording.");
+                    ProbeSession.Notify("Лёгкий режим " + (c.LightMode ? "включён: хукаются корни и методы кадра, почти без нагрузки." : "выключен: полный замер."), 8);
+                }
                 if (ctrl && Input.GetKeyDown(KeyCode.F10))
                 {
                     string msg = WorldPawnDump.WriteStandalone();
                     if (msg == null) msg = "World pawn dump is only available inside a running game.";
-                    else Log.Message("[HSKPerfProbe] " + msg);
+                    else Log.Message("[HSK Performance] " + msg);
+                    Log.Message("[HSK Performance] flecks on the current map: " + FleckCensus.Describe(20));
                     string live = PerfFixes.LiveStatus();
-                    if (live.Length > 0) Log.Message("[HSKPerfProbe] " + live);
+                    if (live.Length > 0) Log.Message("[HSK Performance] " + live);
                     ProbeSession.Notify(msg + (live.Length > 0 ? "   |   " + live : ""));
                 }
                 ProbeSession.OnFrame(Time.unscaledDeltaTime, Time.realtimeSinceStartup);
             }
             catch (Exception e)
             {
-                Log.Error("[HSKPerfProbe] driver error: " + e);
+                Log.Error("[HSK Performance] driver error: " + e);
                 ProbeSession.Abort(e.Message);
             }
         }
@@ -72,10 +81,11 @@ namespace HSKPerfProbe
         static ProbeStartup()
         {
             ProbeCore.MainThreadId = Environment.CurrentManagedThreadId;
-            var go = new GameObject("HSKPerfProbe");
+            var go = new GameObject("HSKPerformance");
             UnityEngine.Object.DontDestroyOnLoad(go);
             go.AddComponent<ProbeDriver>();
-            Log.Message("[HSKPerfProbe] ready. Ctrl+F9 = start/stop a capture, Ctrl+F10 = list what is ticked (world pawns, world objects, things on the maps). Reports go to " + ProbeConfig.Dir);
+            FramePhases.Install(go);
+            Log.Message("[HSK Performance] ready. Ctrl+F9 = start/stop a capture, Ctrl+F10 = list what is ticked (world pawns, world objects, things on the maps). Reports go to " + ProbeConfig.Dir);
             PerfFixes.Init();
         }
     }

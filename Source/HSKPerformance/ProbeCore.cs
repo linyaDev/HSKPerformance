@@ -6,7 +6,7 @@ using System.Runtime.CompilerServices;
 using RimWorld;
 using Verse;
 
-namespace HSKPerfProbe
+namespace HSKPerformance
 {
     /// <summary>One profiled method. All times are Stopwatch ticks.</summary>
     public sealed class Slot
@@ -54,7 +54,7 @@ namespace HSKPerfProbe
     /// </summary>
     public static class ProbeCore
     {
-        public const string HarmonyId = "linya.hskperfprobe";
+        public const string HarmonyId = "linya.hskperformance";
 
         public static volatile bool Active;
         public static int MainThreadId;

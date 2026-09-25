@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <AssemblyName>HSKPerfProbe</AssemblyName>
-    <RootNamespace>HSKPerfProbe</RootNamespace>
+    <AssemblyName>HSKPerformance</AssemblyName>
+    <RootNamespace>HSKPerformance</RootNamespace>
     <GenerateAssemblyInfo>False</GenerateAssemblyInfo>
     <TargetFramework>net48</TargetFramework>
     <LangVersion>12.0</LangVersion>

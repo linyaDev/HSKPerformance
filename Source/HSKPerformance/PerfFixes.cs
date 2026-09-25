@@ -7,7 +7,7 @@ using HarmonyLib;
 using RimWorld;
 using Verse;
 
-namespace HSKPerfProbe
+namespace HSKPerformance
 {
     /// <summary>
     /// Permanent performance fixes. Unlike the profiler hooks these stay installed all the time,
@@ -17,7 +17,7 @@ namespace HSKPerfProbe
     /// </summary>
     public static class PerfFixes
     {
-        public const string HarmonyId = "linya.hskperfprobe.fixes";
+        public const string HarmonyId = "linya.hskperformance.fixes";
 
         /// <summary>Human readable status lines, copied into every report.</summary>
         public static readonly List<string> Status = new List<string>();
@@ -25,7 +25,22 @@ namespace HSKPerfProbe
         /// <summary>Counters that change while the game runs (empty when the fix is not installed).</summary>
         public static string LiveStatus()
         {
-            return RotStorageFix.Installed ? RotStorageFix.Live() : "";
+            string s = RotStorageFix.Installed ? RotStorageFix.Live() : "";
+            if (PawnEffectsFix.Installed) s = (s.Length > 0 ? s + "   |   " : "") + PawnEffectsFix.Live();
+            return s;
+        }
+
+        /// <summary>Applies the fix switches of a config right away (called by the mod settings window).</summary>
+        public static void Reload(ProbeConfig cfg)
+        {
+            RotStorageFix.Enabled = cfg.FixRotStorage;
+            PawnEffectsFix.Enabled = cfg.FixPawnEffects;
+            PawnEffectsFix.MinSpeed = cfg.PawnEffectsMinSpeed;
+            MothballHediffFix.SetEnabled(cfg.FixMothballHediffs, cfg);
+            string line = "fixes switched from settings: rot storage " + (cfg.FixRotStorage ? "ON" : "off") + ", pawn effects/wreck smoke " + (cfg.FixPawnEffects ? "ON" : "off")
+                + " (from speed " + cfg.PawnEffectsMinSpeed.ToString(CultureInfo.InvariantCulture) + "), mothball hediffs " + (cfg.FixMothballHediffs ? "ON" : "off");
+            Status.Add(line);
+            try { Verse.Log.Message("[HSK Performance] " + line); } catch { }
         }
 
         public static void Init()
@@ -34,17 +49,107 @@ namespace HSKPerfProbe
             {
                 var cfg = ProbeConfig.Load();
                 var harmony = new Harmony(HarmonyId);
-                if (cfg.FixRotStorage) RotStorageFix.Apply(harmony, cfg);
-                else Status.Add("rot storage lookup fix: disabled in config.txt");
+                // Patches are installed whatever the config says and only gated by a live flag, so the settings window can switch every fix
+                // on and off without restarting the game (Reload below).
+                RotStorageFix.Apply(harmony, cfg);
+                PawnEffectsFix.Apply(harmony, cfg);
                 if (cfg.FixMothballHediffs) MothballHediffFix.Apply(cfg);
-                else Status.Add("mothball hediff fix: disabled in config.txt");
+                else Status.Add("mothball hediff fix: off (settings / config.txt)");
             }
             catch (Exception e)
             {
                 Status.Add("fix init failed: " + e.Message);
-                Verse.Log.Error("[HSKPerfProbe] fix init failed: " + e);
+                Verse.Log.Error("[HSK Performance] fix init failed: " + e);
             }
-            foreach (var s in Status) Verse.Log.Message("[HSKPerfProbe] " + s);
+            foreach (var s in Status) Verse.Log.Message("[HSK Performance] " + s);
+        }
+    }
+
+    /// <summary>
+    /// Pawns inside the camera view (PostTickVisuals) leave footprints (one fleck per 0.63 cells walked), breathe out vapour when it is
+    /// below zero (10 puffs per 320 ticks per humanlike pawn) and make water ripples. Each of these is a fleck that
+    /// FleckManager.FleckManagerTick walks on every tick: 0.05 ms per tick with nothing in view against 0.93 ms per tick with the whole
+    /// colony in view (Ultrafast, measured). All three are purely cosmetic, so at game speed >= pawn_effects_min_speed (Fast by default)
+    /// they are skipped. Movement, temperature and everything that affects the game are untouched.
+    /// </summary>
+    static class PawnEffectsFix
+    {
+        public static bool Installed;
+        public static bool Enabled = true;
+        public static float MinSpeed = 3f;
+        static int decidedFrame = -1;
+        static bool activeNow, announcedState, everOn;
+        static float lastAnnounce = -100f;
+        static long skipped;
+
+        public static void Apply(Harmony harmony, ProbeConfig cfg)
+        {
+            MinSpeed = cfg.PawnEffectsMinSpeed;
+            Enabled = cfg.FixPawnEffects;
+            var names = new[] { "RimWorld.PawnFootprintMaker", "RimWorld.PawnBreathMoteMaker", "Verse.PawnWaterRippleMaker" };
+            var prefix = new HarmonyMethod(typeof(PawnEffectsFix).GetMethod("Prefix", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)) { priority = Priority.First };
+            int patched = 0;
+            var missing = new List<string>();
+            foreach (var n in names)
+            {
+                var t = AccessTools.TypeByName(n);
+                var m = t == null ? null : AccessTools.Method(t, "ProcessPostTickVisuals", new[] { typeof(int) });
+                if (m == null || m.ReturnType != typeof(void)) { missing.Add(n); continue; }
+                harmony.Patch(m, prefix: prefix);
+                patched++;
+            }
+            // HSK Core: smoke of crashed drop pods and ship parts (SmokeBlack fleck, one per damaged cell every 100 ticks, alive ~580 ticks; the pods only
+            // while in view). Measured 1662 of 1864 live flecks with the colony in view. Purely cosmetic.
+            var smokeType = AccessTools.TypeByName("SK.SK_Motes");
+            var smoke = smokeType == null ? null : AccessTools.Method(smokeType, "ThrowSmokeBlack", new[] { typeof(UnityEngine.Vector3), typeof(float), typeof(Map), typeof(int) });
+            if (smoke != null && smoke.ReturnType == typeof(void)) { harmony.Patch(smoke, prefix: prefix); patched++; }
+            else missing.Add("SK.SK_Motes.ThrowSmokeBlack (HSK Core not loaded?)");
+            Installed = patched > 0;
+            PerfFixes.Status.Add("pawn effects fix: " + patched + " of " + (names.Length + 1) + " effect makers patched (" + (Enabled ? "ON" : "installed but OFF") + "; footprints, breath vapour, water ripples and HSK Core wreck smoke are skipped at game speed >= "
+                + MinSpeed.ToString(CultureInfo.InvariantCulture) + ")" + (missing.Count > 0 ? "; NOT found: " + string.Join(", ", missing.ToArray()) : ""));
+        }
+
+        public static string Live()
+        {
+            return "pawn effects fix live: skipped " + skipped + " effect updates, currently " + (activeNow ? "OFF (fast speed)" : "on (normal)");
+        }
+
+        static bool Active()
+        {
+            int frame = UnityEngine.Time.frameCount;
+            if (frame == decidedFrame) return activeNow;
+            decidedFrame = frame;
+            bool on;
+            try { var tm = Find.TickManager; on = Enabled && tm != null && tm.TickRateMultiplier >= MinSpeed; }
+            catch { on = false; }
+            activeNow = on;
+            Announce(on);
+            return on;
+        }
+
+        // Tells the player when the mode flips (at most once every few seconds, and not at all before it was on once).
+        static void Announce(bool on)
+        {
+            if (on == announcedState) return;
+            if (!on && !everOn) return;
+            float real = UnityEngine.Time.realtimeSinceStartup;
+            if (real - lastAnnounce < 3f) return;
+            announcedState = on; lastAnnounce = real;
+            if (on) everOn = true;
+            string speed = "";
+            try { speed = " (скорость " + Find.TickManager.CurTimeSpeed + ")"; } catch { }
+            string text = on ? "HSK Performance: следы, пар от дыхания, рябь и дым обломков ОТКЛЮЧЕНЫ" + speed
+                             : "HSK Performance: следы, пар от дыхания, рябь и дым обломков снова ВКЛЮЧЕНЫ" + speed;
+            Verse.Log.Message("[HSK Performance] pawn effects " + (on ? "OFF" : "ON") + speed);
+            try { Messages.Message(text, MessageTypeDefOf.SilentInput, false); } catch { }
+        }
+
+        // Harmony prefix: false = skip the original method
+        static bool Prefix()
+        {
+            if (!Active()) return true;
+            skipped++;
+            return false;
         }
     }
 
@@ -60,6 +165,22 @@ namespace HSKPerfProbe
     /// </summary>
     static class MothballHediffFix
     {
+        static readonly List<HediffDef> changedDefs = new List<HediffDef>();
+        static bool on;
+
+        public static void SetEnabled(bool enable, ProbeConfig cfg)
+        {
+            if (enable == on) return;
+            if (enable) { Apply(cfg); return; }
+            var fAllow = AccessTools.Field(typeof(HediffDef), "alwaysAllowMothball");
+            var fCached = AccessTools.Field(typeof(HediffDef), "alwaysAllowMothballCached");
+            if (fAllow != null && fCached != null)
+                foreach (var d in changedDefs) { fAllow.SetValue(d, false); fCached.SetValue(d, false); }
+            PerfFixes.Status.Add("mothball hediff fix: switched off, " + changedDefs.Count + " hediff defs restored (pawns already mothballed stay frozen until they are next processed)");
+            changedDefs.Clear();
+            on = false;
+        }
+
         public static void Apply(ProbeConfig cfg)
         {
             var fAllow = AccessTools.Field(typeof(HediffDef), "alwaysAllowMothball");
@@ -90,8 +211,10 @@ namespace HSKPerfProbe
                 fAllow.SetValue(def, true);
                 fCached.SetValue(def, true);
                 changed.Add(def.defName);
+                changedDefs.Add(def);
             }
 
+            on = true;
             var unmatched = new List<string>();
             for (int i = 0; i < patterns.Length; i++) if (!matchedPattern[i]) unmatched.Add(patterns[i]);
 
@@ -124,6 +247,7 @@ namespace HSKPerfProbe
         static int verifyLeft, verified, mismatches;
         static bool disabled;
         public static bool Installed;
+        public static bool Enabled = true;
         static long fastTicks, slowTicks;
 
         public static void Apply(Harmony harmony, ProbeConfig cfg)
@@ -143,10 +267,11 @@ namespace HSKPerfProbe
                 return;
             }
 
+            Enabled = cfg.FixRotStorage;
             verifyLeft = cfg.FixRotVerifyCalls;
             harmony.Patch(target, prefix: new HarmonyMethod(typeof(RotStorageFix).GetMethod("Prefix")) { priority = Priority.First });
             Installed = true;
-            PerfFixes.Status.Add("rot storage fix: active" + (verifyLeft > 0 ? " (self-check on the first " + verifyLeft + " calls)" : " (no self-check)"));
+            PerfFixes.Status.Add("rot storage fix: " + (Enabled ? "active" : "installed but OFF (settings / config.txt)") + (verifyLeft > 0 ? " (self-check on the first " + verifyLeft + " calls)" : " (no self-check)"));
         }
 
         static Building_Storage Fast(CompRottable comp)
@@ -183,7 +308,7 @@ namespace HSKPerfProbe
         public static bool Prefix(CompRottable __0, out Building_Storage __1, ref bool __result)
         {
             calls++;
-            if (disabled) { __1 = null; return true; } // run the original
+            if (disabled || !Enabled) { __1 = null; return true; } // run the original
             try
             {
                 if (verifyLeft > 0)
@@ -200,7 +325,7 @@ namespace HSKPerfProbe
                     {
                         mismatches++;
                         if (mismatches <= 5)
-                            Verse.Log.Warning("[HSKPerfProbe] rot storage fix MISMATCH for " + __0.parent + " at " + __0.parent.PositionHeld + ": original="
+                            Verse.Log.Warning("[HSK Performance] rot storage fix MISMATCH for " + __0.parent + " at " + __0.parent.PositionHeld + ": original="
                                 + (slow == null ? "none" : slow.ToString()) + ", fast=" + (fast == null ? "none" : fast.ToString()));
                         if (mismatches >= 3) Disable("3 mismatches between the fast lookup and the original");
                     }
@@ -225,7 +350,7 @@ namespace HSKPerfProbe
         {
             disabled = true;
             PerfFixes.Status.Add("rot storage fix: SWITCHED OFF after " + verified + " checked calls: " + why);
-            Verse.Log.Error("[HSKPerfProbe] rot storage fix switched off: " + why);
+            Verse.Log.Error("[HSK Performance] rot storage fix switched off: " + why);
         }
 
         static void FinishVerification()
@@ -235,7 +360,7 @@ namespace HSKPerfProbe
                 + (slowTicks * f).ToString("F1", CultureInfo.InvariantCulture) + " us per call vs fast "
                 + (fastTicks * f).ToString("F2", CultureInfo.InvariantCulture) + " us";
             if (!disabled) PerfFixes.Status.Add(s);
-            Verse.Log.Message("[HSKPerfProbe] " + s);
+            Verse.Log.Message("[HSK Performance] " + s);
         }
     }
 }
