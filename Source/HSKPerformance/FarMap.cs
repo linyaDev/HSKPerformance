@@ -39,6 +39,8 @@ namespace HSKPerformance
         static Color32 MarshColor = new Color32(0x2B, 0x3A, 0x2A, 255);
         static Color32 DoorColor = new Color32(0x43, 0x4B, 0x53, 255);    // between the background and the walls: faint
         static Color32 BuildingColor = new Color32(0x2D, 0x34, 0x3A, 255);  // buildings that cannot be walked through (big machines, blocks): very pale
+        static Color FireSpotColor = new Color(0xB5 / 255f, 0x40 / 255f, 0x0F / 255f, 1f);   // dark orange spot under the flame so that a fire is visible at nine pixels per cell
+        static Material fireSpotMaterial;
         static Color32 StorageColor = new Color32(0x3A, 0x33, 0x48, 255);   // impassable storage buildings: another pale colour
         static readonly Color32 Clear = new Color32(0, 0, 0, 0);
         static Color BackgroundColor = new Color(0x12 / 255f, 0x16 / 255f, 0x14 / 255f, 1f);
@@ -59,10 +61,10 @@ namespace HSKPerformance
         /// <summary>Sets the colours from three RRGGBB strings; a string that is not valid keeps the current colour. The texture is redrawn on the next far map frame.</summary>
         public static void SetColors(ProbeConfig cfg)
         {
-            SetColors(cfg.FarMapWall, cfg.FarMapRock, cfg.FarMapBackground, cfg.FarMapWater, cfg.FarMapMarsh, cfg.FarMapDoor, cfg.FarMapBuilding, cfg.FarMapStorage);
+            SetColors(cfg.FarMapWall, cfg.FarMapRock, cfg.FarMapBackground, cfg.FarMapWater, cfg.FarMapMarsh, cfg.FarMapDoor, cfg.FarMapBuilding, cfg.FarMapStorage, cfg.FarMapFire);
         }
 
-        static void SetColors(string wall, string rock, string background, string water, string marsh, string door, string building, string storage)
+        static void SetColors(string wall, string rock, string background, string water, string marsh, string door, string building, string storage, string fire)
         {
             Color32 c;
             bool changed = false;
@@ -73,6 +75,11 @@ namespace HSKPerformance
             if (TryParseHex(door, out c) && !c.Equals(DoorColor)) { DoorColor = c; changed = true; }
             if (TryParseHex(building, out c) && !c.Equals(BuildingColor)) { BuildingColor = c; changed = true; }
             if (TryParseHex(storage, out c) && !c.Equals(StorageColor)) { StorageColor = c; changed = true; }
+            if (TryParseHex(fire, out c))
+            {
+                var f = new Color(c.r / 255f, c.g / 255f, c.b / 255f, 1f);
+                if (f != FireSpotColor) { FireSpotColor = f; fireSpotMaterial = null; }
+            }
             if (TryParseHex(background, out c))
             {
                 var bg = new Color(c.r / 255f, c.g / 255f, c.b / 255f, 1f);
@@ -174,7 +181,7 @@ namespace HSKPerformance
         public static string Live()
         {
             return "far map live: " + (failed ? "SWITCHED OFF after an error" : (activeNow ? "ACTIVE" : "off")) + ", cell " + lastPx.ToString("F1", CultureInfo.InvariantCulture)
-                + " px (threshold " + ThresholdPx.ToString("F1", CultureInfo.InvariantCulture) + "), " + activeFrames + " frames drawn, " + rebuilds + " texture rebuilds, " + dirtyApplied + " cells updated, " + selectedDrawn + " selected things drawn";
+                + " px (threshold " + ThresholdPx.ToString("F1", CultureInfo.InvariantCulture) + "), " + activeFrames + " frames drawn, " + rebuilds + " texture rebuilds, " + dirtyApplied + " cells updated, " + selectedDrawn + " selected things drawn, " + firesDrawn + " fires drawn";
         }
 
         public static string ContextLine()
@@ -287,7 +294,45 @@ namespace HSKPerformance
             var wall = centre; wall.y = AltitudeLayer.Building.AltitudeFor();
             Graphics.DrawMesh(MeshPool.plane10, Matrix4x4.TRS(bg, Quaternion.identity, scale), backgroundMaterial, 0);
             Graphics.DrawMesh(MeshPool.plane10, Matrix4x4.TRS(wall, Quaternion.identity, scale), wallMaterial, 0);
+            DrawFires(map);
             DrawSelectedThings(map);
+        }
+
+        static long firesDrawn;
+        static bool fireErrorLogged;
+
+        /// <summary>
+        /// Everything that burns is shown: the game's own animated flame texture (Fire.DrawNowAt, the same sprite the game draws) on top of a small dark orange spot
+        /// that keeps it visible when a map cell is only a few pixels. Burning buildings and pawns have a Fire thing too, so they show up as well.
+        /// </summary>
+        static void DrawFires(Map map)
+        {
+            var fires = map.listerThings.ThingsOfDef(ThingDefOf.Fire);
+            if (fires == null || fires.Count == 0) return;
+            if (fireSpotMaterial == null) fireSpotMaterial = SolidColorMaterials.SimpleSolidColorMaterial(FireSpotColor);
+            int count = Math.Min(fires.Count, 400);
+            for (int i = 0; i < count; i++)
+            {
+                var fire = fires[i] as Fire;
+                if (fire == null || !fire.Spawned) continue;
+                try
+                {
+                    var pos = fire.DrawPos;
+                    float size = Mathf.Clamp(0.9f + fire.fireSize * 0.8f, 1f, 2.2f);   // in cells: a bigger fire, a bigger spot
+                    var spot = new Vector3(pos.x, AltitudeLayer.BuildingOnTop.AltitudeFor(), pos.z);
+                    Graphics.DrawMesh(MeshPool.plane10, Matrix4x4.TRS(spot, Quaternion.identity, new Vector3(size, 1f, size)), fireSpotMaterial, 0);
+                    fire.DrawNowAt(pos);
+                    firesDrawn++;
+                }
+                catch (Exception e)
+                {
+                    if (!fireErrorLogged)
+                    {
+                        fireErrorLogged = true;
+                        try { Verse.Log.Warning("[HSK Performance] far map: could not draw a fire: " + e.GetType().Name + " " + e.Message); } catch { }
+                    }
+                }
+            }
         }
 
         static long selectedDrawn;

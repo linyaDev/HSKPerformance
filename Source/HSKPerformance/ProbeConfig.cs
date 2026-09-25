@@ -32,11 +32,12 @@ namespace HSKPerformance
         public bool FixFarMap = true;
         public float FarMapPx = 17f;
         public string FarMapWall = "6E7680", FarMapRock = "3A302A", FarMapBackground = "121614";   // RRGGBB
-        public string FarMapWater = "26394A", FarMapMarsh = "2B3A2A", FarMapDoor = "434B53", FarMapBuilding = "2D343A", FarMapStorage = "3A3348";
+        public string FarMapWater = "26394A", FarMapMarsh = "2B3A2A", FarMapDoor = "434B53", FarMapBuilding = "2D343A", FarMapStorage = "3A3348", FarMapFire = "B5400F";
         // Camera+ marker outlines: colonists green, wild predators red (only where the player has no Camera+ rule for the pawn).
         public bool FixMarkerColors = true;
         public string MarkerColonist = "33E055", MarkerPredator = "E63030";   // RRGGBB
-        public string MarkerGuest = "8FD4F5", MarkerPrisoner = "FF9500", MarkerSlave = "F0D020", MarkerDrone = "747E88";
+        // marker_guest: empty means the guests' fill has the same colour as their outline
+        public string MarkerGuest = "", MarkerPrisoner = "FF9500", MarkerSlave = "F0D020", MarkerDrone = "747E88";
         public string MarkerDronePrefixes = "Drone,AIRobot_";   // race defName prefixes (comma separated) that get the pale drone fill
         public bool FixPawnEffects = true;
         public float PawnEffectsMinSpeed = 3f;
@@ -89,6 +90,7 @@ namespace HSKPerformance
                     "far_map_door=" + FarMapDoor + "\n" +
                     "far_map_building=" + FarMapBuilding + "\n" +
                     "far_map_storage=" + FarMapStorage + "\n" +
+                    "far_map_fire=" + FarMapFire + "\n" +
                     "fix_marker_colors=" + B(FixMarkerColors) + "\n" +
                     "marker_colonist=" + MarkerColonist + "\n" +
                     "marker_predator=" + MarkerPredator + "\n" +
@@ -144,10 +146,11 @@ namespace HSKPerformance
                         "far_map_door=434B53\n" +
                         "far_map_building=2D343A\n" +
                         "far_map_storage=3A3348\n" +
+                        "far_map_fire=B5400F\n" +
                         "fix_marker_colors=true\n" +
                         "marker_colonist=33E055\n" +
                         "marker_predator=E63030\n" +
-                        "marker_guest=8FD4F5\n" +
+                        "marker_guest=\n" +
                         "marker_prisoner=FF9500\n" +
                         "marker_slave=F0D020\n" +
                         "marker_drone=747E88\n" +
@@ -195,6 +198,7 @@ namespace HSKPerformance
                         case "far_map_door": c.FarMapDoor = v; break;
                         case "far_map_building": c.FarMapBuilding = v; break;
                         case "far_map_storage": c.FarMapStorage = v; break;
+                        case "far_map_fire": c.FarMapFire = v; break;
                         case "fix_marker_colors": if (bool.TryParse(v, out b)) c.FixMarkerColors = b; break;
                         case "marker_colonist": c.MarkerColonist = v; break;
                         case "marker_predator": c.MarkerPredator = v; break;

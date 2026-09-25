@@ -16,7 +16,8 @@ namespace HSKPerformance
     /// colonists get white with a black outline. We post-process that result, only when the player has no rule for the pawn (dotConfig == null):
     ///   - colonists get a bright green marker with a darker green outline (not while selected, downed or in a mental state, those keep Camera+'s own colours),
     ///   - drones and robots (race defName starts with one of marker_drone_prefixes: Drone, AIRobot_) get a pale grey-blue fill instead of white,
-    ///   - guests (host faction is the player, or quest lodgers) light blue, prisoners of the colony orange, slaves of the colony yellow,
+    ///   - guests and visitors (host faction is the player, quest lodgers, or a humanlike pawn of a faction that is not hostile to us) get a fill of the same colour
+    ///     as their Camera+ outline (light blue for neutral factions), unless marker_guest is set to a fixed colour; prisoners of the colony orange, slaves of the colony yellow,
     ///   - predators that are not ours (RaceProps.predator, wild or hostile faction) get a red marker with a darker red outline, even when a Camera+ rule matches them.
     ///
     /// A selected pawn that Camera+ shows as a marker also gets its name drawn under the marker (Camera+ hides the vanilla name of pawns in marker mode).
@@ -31,7 +32,7 @@ namespace HSKPerformance
 
         static Color colonist = new Color(0x33 / 255f, 0xE0 / 255f, 0x55 / 255f, 1f);
         static Color predator = new Color(0xE6 / 255f, 0x30 / 255f, 0x30 / 255f, 1f);
-        static Color guest = new Color(0x8F / 255f, 0xD4 / 255f, 0xF5 / 255f, 1f);     // light blue
+        static Color? guestFixed;   // null: the guest fill is the colour of the pawn's own outline (Camera+ colours neutral factions light blue)
         static Color prisoner = new Color(0xFF / 255f, 0x95 / 255f, 0x00 / 255f, 1f);  // orange
         static Color slave = new Color(0xF0 / 255f, 0xD0 / 255f, 0x20 / 255f, 1f);     // yellow
         static Color drone = new Color(0x74 / 255f, 0x7E / 255f, 0x88 / 255f, 1f);     // pale grey-blue: drones and robots are white otherwise and dominate the map
@@ -93,7 +94,7 @@ namespace HSKPerformance
             Color c;
             if (TryHex(colonistHex, out c)) colonist = c;
             if (TryHex(predatorHex, out c)) predator = c;
-            if (TryHex(guestHex, out c)) guest = c;
+            guestFixed = TryHex(guestHex, out c) ? (Color?)c : null;
             if (TryHex(prisonerHex, out c)) prisoner = c;
             if (TryHex(slaveHex, out c)) slave = c;
             if (TryHex(droneHex, out c)) drone = c;
@@ -119,6 +120,15 @@ namespace HSKPerformance
                 if (def.defName.StartsWith(p, StringComparison.Ordinal)) { r = true; break; }
             droneByDef[def] = r;
             return r;
+        }
+
+        // guests of the colony (host faction, quest lodgers) and visitors: humanlike pawns of another faction that is not hostile to the player
+        static bool IsGuestLike(Pawn pawn)
+        {
+            var player = Faction.OfPlayer;
+            if (pawn.HostFaction == player || pawn.IsQuestLodger()) return true;
+            var f = pawn.Faction;
+            return f != null && f != player && !f.HostileTo(player) && !pawn.IsPrisoner && !pawn.IsSlave;
         }
 
         static void Paint(ref Color inner, ref Color outer, Color c)
@@ -243,6 +253,7 @@ namespace HSKPerformance
             {
                 var selector = Find.Selector;
                 if (selector != null && selector.IsSelected(pawn)) return;            // the selected pawn keeps Camera+'s highlight
+                Color originalOutline = outerColor;                                    // what Camera+ chose (the faction colour for foreign pawns)
                 // drones and robots (Odyssey Drone_*, Misc. Robots AIRobot_*): only the fill is toned down, the outline (faction colour) stays
                 if (IsDrone(pawn.def))
                 {
@@ -253,7 +264,7 @@ namespace HSKPerformance
                 {
                     if (pawn.IsSlaveOfColony) { Paint(ref innerColor, ref outerColor, slave); recolored++; return; }
                     if (pawn.IsPrisonerOfColony) { Paint(ref innerColor, ref outerColor, prisoner); recolored++; return; }
-                    if (pawn.HostFaction == Faction.OfPlayer || pawn.IsQuestLodger()) { Paint(ref innerColor, ref outerColor, guest); recolored++; return; }
+                    if (IsGuestLike(pawn)) { Paint(ref innerColor, ref outerColor, guestFixed ?? originalOutline); recolored++; return; }
                 }
                 bool predatorNotOurs = !pawn.IsColonist && pawn.RaceProps != null && pawn.RaceProps.predator && pawn.Faction != Faction.OfPlayer;
                 if (predatorNotOurs)
