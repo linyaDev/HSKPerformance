@@ -15,6 +15,8 @@ namespace HSKPerfProbe
         public bool HookUpdate = true;
         public bool HookGui = true;
         public bool HookHarmony = true;
+        public bool HookVanillaInternals = true; // name the parts of DoSingleTick, MapPreTick/PostTick and WorldTick
+        public bool HookPawnTrackers = true;     // name the trackers inside Pawn.Tick/TickInterval (many calls, more overhead)
         public int TopMods = 40;
         public int TopMethods = 60;
         public int TopDefs = 30;
@@ -52,6 +54,8 @@ namespace HSKPerfProbe
                         "hook_update=true\n" +
                         "hook_gui=true\n" +
                         "hook_harmony_patches=true\n" +
+                        "hook_vanilla_internals=true\n" +
+                        "hook_pawn_trackers=true\n" +
                         "top_mods=40\n" +
                         "top_methods=60\n" +
                         "top_defs=30\n" +
@@ -79,6 +83,8 @@ namespace HSKPerfProbe
                         case "hook_update": if (bool.TryParse(v, out b)) c.HookUpdate = b; break;
                         case "hook_gui": if (bool.TryParse(v, out b)) c.HookGui = b; break;
                         case "hook_harmony_patches": if (bool.TryParse(v, out b)) c.HookHarmony = b; break;
+                        case "hook_vanilla_internals": if (bool.TryParse(v, out b)) c.HookVanillaInternals = b; break;
+                        case "hook_pawn_trackers": if (bool.TryParse(v, out b)) c.HookPawnTrackers = b; break;
                         case "top_mods": if (int.TryParse(v, NumberStyles.Integer, CultureInfo.InvariantCulture, out n) && n > 0) c.TopMods = n; break;
                         case "top_methods": if (int.TryParse(v, NumberStyles.Integer, CultureInfo.InvariantCulture, out n) && n > 0) c.TopMethods = n; break;
                         case "top_defs": if (int.TryParse(v, NumberStyles.Integer, CultureInfo.InvariantCulture, out n) && n > 0) c.TopDefs = n; break;

@@ -50,13 +50,50 @@ namespace HSKPerfProbe
 
         const BindingFlags Declared = BindingFlags.DeclaredOnly | BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic;
 
+        static Dictionary<string, List<Type>> simpleNames;
+
+        /// <summary>Resolves "Full.Name", "A.Name|B.Name" or a bare simple name (must be unique in Assembly-CSharp).</summary>
         static Type T(string names)
         {
             foreach (var n in names.Split('|'))
             {
-                var t = CoreAsm.GetType(n);
+                Type t = null;
+                try { t = CoreAsm.GetType(n); }
+                catch (Exception e) { Notes.Add("type " + n + " could not be loaded: " + e.GetType().Name); continue; } // a broken type must never take the whole catalog down
                 if (t != null) return t;
+                if (n.IndexOf('.') < 0)
+                {
+                    t = BySimpleName(n);
+                    if (t != null) return t;
+                }
             }
+            return null;
+        }
+
+        static Type BySimpleName(string name)
+        {
+            if (simpleNames == null)
+            {
+                simpleNames = new Dictionary<string, List<Type>>();
+                Type[] all;
+                try { all = CoreAsm.GetTypes(); }
+                catch (ReflectionTypeLoadException e) { all = e.Types.Where(x => x != null).ToArray(); }
+                foreach (var t in all)
+                {
+                    try
+                    {
+                        if (t.IsNested) continue;
+                        List<Type> list;
+                        if (!simpleNames.TryGetValue(t.Name, out list)) simpleNames[t.Name] = list = new List<Type>();
+                        list.Add(t);
+                    }
+                    catch { } // one unloadable type must not hide the others
+                }
+            }
+            List<Type> found;
+            if (!simpleNames.TryGetValue(name, out found)) return null;
+            if (found.Count == 1) return found[0];
+            Notes.Add("type name '" + name + "' is ambiguous (" + found.Count + " matches), use the full name");
             return null;
         }
 
@@ -94,6 +131,53 @@ namespace HSKPerfProbe
             "GUI|RimWorld.MapInterface:MapInterfaceOnGUI_BeforeMainTabs", "GUI|RimWorld.MapInterface:MapInterfaceOnGUI_AfterMainTabs",
             "GUI|RimWorld.InspectPaneUtility:InspectPaneOnGUI", "GUI|RimWorld.GlobalControls:GlobalControlsOnGUI",
             "GUI|Verse.Messages:MessagesDoGUI", "GUI|RimWorld.Planet.WorldSelector:WorldSelectorOnGUI",
+        };
+
+        // What TickManager.DoSingleTick, Map.MapPreTick/MapPostTick and World.WorldTick actually call (read from the 1.6 source).
+        // Hooking every callee turns the "vanilla time not covered by a hook" of those four methods into named parts.
+        static readonly string[] TickInternals =
+        {
+            // DoSingleTick
+            "Tick|TickList:Tick", "Tick|DateNotifier:DateNotifierTick", "Tick|Scenario:TickScenario", "Tick|World:WorldPostTick",
+            "Tick|StoryWatcher:StoryWatcherTick", "Tick|GameEnder:GameEndTick", "Tick|TaleManager:TaleManagerTick", "Tick|History:HistoryTick",
+            "Tick|GameComponentUtility:GameComponentTick", "Tick|LetterStack:LetterStackTick", "Tick|Autosaver:AutosaverTick",
+            "Tick|FilthMonitor:FilthMonitorTick", "Tick|TransportShipManager:ShipObjectsTick",
+            // MapPreTick
+            "Tick|ItemAvailability:Tick", "Tick|ListerHaulables:ListerHaulablesTick", "Tick|AutoBuildRoofAreaSetter:AutoBuildRoofAreaSetterTick_First",
+            "Tick|RoofCollapseBufferResolver:CollapseRoofsMarkedToCollapse", "Tick|WindManager:WindManagerTick", "Tick|MapTemperature:MapTemperatureTick",
+            "Tick|TemporaryThingDrawer:Tick", "Tick|Verse.PathFinder:PathFinderTick",
+            // MapPostTick
+            "Tick|WildAnimalSpawner:WildAnimalSpawnerTick", "Tick|WildPlantSpawner:WildPlantSpawnerTick", "Tick|PowerNetManager:PowerNetsTick",
+            "Tick|SteadyEnvironmentEffects:SteadyEnvironmentEffectsTick", "Tick|TempTerrainManager:Tick", "Tick|GasGrid:Tick", "Tick|PollutionGrid:PollutionTick",
+            "Tick|DeferredSpawner:DeferredSpawnerTick", "Tick|LordManager:LordManagerTick", "Tick|PassingShipManager:PassingShipManagerTick",
+            "Tick|VoluntarilyJoinableLordsStarter:VoluntarilyJoinableLordsStarterTick", "Tick|GameConditionManager:GameConditionManagerTick",
+            "Tick|WeatherManager:WeatherManagerTick", "Tick|ResourceCounter:ResourceCounterTick", "Tick|WeatherDecider:WeatherDeciderTick",
+            "Tick|FireWatcher:FireWatcherTick", "Tick|WaterBodyTracker:Tick", "Tick|FleckManager:FleckManagerTick", "Tick|EffecterMaintainer:EffecterMaintainerTick",
+            "Tick|MapComponentUtility:MapComponentTick",
+            // WorldTick
+            "Tick|FactionManager:FactionManagerTick", "Tick|WorldDebugDrawer:WorldDebugDrawerTick", "Tick|WorldPathGrid:WorldPathGridTick",
+            "Tick|WorldComponentUtility:WorldComponentTick", "Tick|IdeoManager:IdeoManagerTick", "Tick|WorldObject:DoTick",
+            // pathfinding and job execution, used by pawns but not inside a pawn tracker
+            "Tick|Verse.PathFinder:FindPathNow", "Tick|JobDriver:DriverTick",
+        };
+
+        // What Pawn.Tick and Pawn.TickInterval call. Called for every pawn, so this group has the highest measurement overhead.
+        static readonly string[] PawnTrackers =
+        {
+            "Tick|VerbTracker:VerbsTick", "Tick|Pawn_RopeTracker:RopingTick", "Tick|Pawn_FlightTracker:FlightTick", "Tick|Pawn_NativeVerbs:NativeVerbsTick",
+            "Tick|Pawn_StanceTracker:StanceTrackerTick", "Tick|Pawn_EquipmentTracker:EquipmentTrackerTick", "Tick|Pawn_AbilityTracker:AbilitiesTick",
+            "Tick|Pawn_InventoryTracker:InventoryTrackerTick", "Tick|Pawn_GeneTracker:GeneTrackerTick", "Tick|PawnRenderer:EffectersTick",
+            "Tick|Pawn_ApparelTracker:ApparelTrackerTickRare", "Tick|Pawn_TrainingTracker:TrainingTrackerTickRare",
+            "Tick|Pawn_CarryTracker:CarryHandsTickInterval", "Tick|Pawn_InfectionVectorTracker:InfectionTickInterval",
+            "Tick|Pawn_ApparelTracker:ApparelTrackerTickInterval", "Tick|Pawn_InteractionsTracker:InteractionsTrackerTickInterval",
+            "Tick|Pawn_CallTracker:CallTrackerTickInterval", "Tick|Pawn_SkillTracker:SkillsTickInterval", "Tick|Pawn_DraftController:DraftControllerTickInterval",
+            "Tick|Pawn_RelationsTracker:RelationsTrackerTickInterval", "Tick|Pawn_PsychicEntropyTracker:PsychicEntropyTrackerTickInterval",
+            "Tick|Pawn_GuestTracker:GuestTrackerTickInterval", "Tick|Pawn_IdeoTracker:IdeoTrackerTickInterval", "Tick|Pawn_GeneTracker:GeneTrackerTickInterval",
+            "Tick|Pawn_RoyaltyTracker:RoyaltyTrackerTickInterval", "Tick|Pawn_StyleTracker:StyleTrackerTickInterval",
+            "Tick|Pawn_StyleObserverTracker:StyleObserverTickInterval", "Tick|Pawn_SurroundingsTracker:SurroundingsTrackerTickInterval",
+            "Tick|Pawn_LearningTracker:LearningTickInterval", "Tick|PollutionUtility:PawnPollutionTickInterval", "Tick|GasUtility:PawnGasEffectsTickInterval",
+            "Tick|ToxicUtility:PawnToxicTickInterval", "Tick|VacuumUtility:PawnVacuumTickInterval", "Tick|Pawn_AgeTracker:AgeTickInterval",
+            "Tick|Pawn_RecordsTracker:RecordsTickInterval", "Tick|Pawn_GuiltTracker:GuiltTrackerTickInterval", "Tick|PawnUtility:GainComfortFromThingIfPossible",
         };
 
         static List<Family> BuildFamilies(ProbeConfig cfg)
@@ -269,7 +353,14 @@ namespace HSKPerfProbe
 
         static void AddSinks(ProbeConfig cfg)
         {
-            foreach (var entry in Sinks)
+            AddSinkList(cfg, Sinks, "Vanilla hot spot");
+            if (cfg.HookVanillaInternals) AddSinkList(cfg, TickInternals, "Vanilla tick internals");
+            if (cfg.HookPawnTrackers) AddSinkList(cfg, PawnTrackers, "Pawn trackers");
+        }
+
+        static void AddSinkList(ProbeConfig cfg, string[] entries, string label)
+        {
+            foreach (var entry in entries)
             {
                 var parts = entry.Split('|');
                 string cat = parts[0];
@@ -279,20 +370,25 @@ namespace HSKPerfProbe
                 bool root = parts.Length > 2 && parts[2] == "root";
                 var tm = parts[1].Split(':');
                 var type = T(tm[0]);
-                if (type == null) { Notes.Add("vanilla hot spot type missing: " + parts[1]); continue; }
-                MethodInfo method = null;
-                foreach (var m in type.GetMethods(Declared))
+                if (type == null) { Notes.Add(label + ": type missing: " + parts[1]); continue; }
+                // every non-generic overload (FindPathNow has two), not just the first one
+                int hooked = 0;
+                MethodInfo[] methods;
+                try { methods = type.GetMethods(Declared); }
+                catch (Exception e) { Notes.Add(label + ": " + parts[1] + " could not be inspected: " + e.GetType().Name); continue; }
+                foreach (var m in methods)
                 {
-                    if (m.Name == tm[1] && !m.IsAbstract && !m.IsGenericMethod) { method = m; break; }
+                    if (m.Name != tm[1] || m.IsAbstract || m.IsGenericMethod) continue;
+                    var tg = AddTarget(m, cat, label, false, root, null);
+                    hooked++;
+                    if (tg != null && root)
+                    {
+                        if (cat == "Tick") TickRoot = tg.Slot;
+                        else if (cat == "Update") UpdateRoot = tg.Slot;
+                        else if (cat == "GUI") GuiRoot = tg.Slot;
+                    }
                 }
-                if (method == null) { Notes.Add("vanilla hot spot method missing: " + parts[1]); continue; }
-                var tg = AddTarget(method, cat, "Vanilla hot spot", false, root, null);
-                if (tg != null && root)
-                {
-                    if (cat == "Tick") TickRoot = tg.Slot;
-                    else if (cat == "Update") UpdateRoot = tg.Slot;
-                    else if (cat == "GUI") GuiRoot = tg.Slot;
-                }
+                if (hooked == 0) Notes.Add(label + ": method missing: " + parts[1]);
             }
         }
 

@@ -268,6 +268,40 @@ namespace HSKPerfProbe
             }
             sb.AppendLine();
 
+            // ---- vanilla tick breakdown ----
+            if (ticks > 0)
+            {
+                var containers = new HashSet<string>
+                {
+                    "TickManager.DoSingleTick", "Map.MapPreTick", "Map.MapPostTick", "World.WorldTick", "WorldObjectsHolder.WorldObjectsHolderTick",
+                    "TickList.Tick", "Pawn.Tick", "Pawn.TickInterval", "Pawn_HealthTracker.HealthTick", "Pawn_HealthTracker.HealthTickInterval",
+                    "Pawn_JobTracker.JobTrackerTick", "Pawn_JobTracker.JobTrackerTickInterval", "Pawn_NeedsTracker.NeedsTrackerTickInterval",
+                    "Pawn_MindState.MindStateTickInterval", "ThingWithComps.Tick", "MapComponentUtility.MapComponentTick",
+                    "GameComponentUtility.GameComponentTick", "WorldComponentUtility.WorldComponentTick", "LordManager.LordManagerTick",
+                    "WorldObject.DoTick", "JobDriver.DriverTick", "Pawn_PathFollower.PatherTick", "PathFinder.FindPathNow",
+                };
+                var coreTick = slots.Where(s => s.Mod == ModMap.Core && s.Category == "Tick").OrderByDescending(s => s.ExclTicks).ToList();
+                double tickWorkMs = slots.Where(s => s.Category == "Tick").Sum(s => s.ExclTicks * toMs) / ticks;
+                sb.AppendLine("## Where the vanilla tick goes (ms per tick)");
+                sb.AppendLine();
+                sb.AppendLine("Exclusive time of vanilla methods in the Tick category. `% of tick work` is relative to " + F(tickWorkMs, 2) + " ms per tick, the sum of all exclusive Tick rows (mods included). Rows marked **remainder** are container methods (they call other hooked methods): what is shown is only the part not covered by a deeper hook, i.e. what is still unexplained.");
+                sb.AppendLine();
+                sb.AppendLine("| # | method | group | ms/tick | % of tick work | calls/tick | avg us/call | note |");
+                sb.AppendLine("|---:|---|---|---:|---:|---:|---:|---|");
+                rank = 0;
+                foreach (var s in coreTick.Take(45))
+                {
+                    rank++;
+                    double ms = s.ExclTicks * toMs;
+                    sb.AppendLine("| " + rank + " | " + Clean(s.Name) + " | " + Clean(s.Family) + " | " + F(ms / ticks, 3) + " | " + F(tickWorkMs > 0 ? ms / ticks / tickWorkMs * 100 : 0, 1)
+                        + " | " + F((double)s.Calls / ticks, 2) + " | " + F(s.Calls > 0 ? ms * 1000.0 / s.Calls : 0, 2) + " | " + (containers.Contains(s.Name) ? "**remainder**" : "") + " |");
+                }
+                double remainderMs = coreTick.Where(s => containers.Contains(s.Name)).Sum(s => s.ExclTicks * toMs) / ticks;
+                sb.AppendLine();
+                sb.AppendLine("Unexplained (sum of the remainder rows above): **" + F(remainderMs, 3) + " ms per tick** = " + F(tickWorkMs > 0 ? remainderMs / tickWorkMs * 100 : 0, 1) + " % of tick work.");
+                sb.AppendLine();
+            }
+
             // ---- defs ----
             sb.AppendLine("## Top " + cfg.TopDefs + " definitions by Tick/Update cost");
             sb.AppendLine();
